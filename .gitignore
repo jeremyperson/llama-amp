@@ -1,0 +1,31 @@
+# Runtime / personal state — never commit
+config.json
+playlist.txt
+playlist.txt.*
+durations.json
+playlists/
+
+# Python
+__pycache__/
+*.pyc
+
+# Editor/backup snapshots
+*.bak
+*.pre-*
+
+# Build output
+packaging/build/
+packaging/dist/
+packaging/fonts-cache/
+*.deb
+
+# Media (the bundled demo track is not redistributable)
+*.mp3
+*.flac
+*.ogg
+*.wav
+
+nohup.out
+
+# Personal local launcher (absolute paths); the packaged .desktop is generated
+music-player.desktop
