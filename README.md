@@ -1,7 +1,11 @@
 # Llama Amp 🦙
 
+[![Latest release](https://img.shields.io/github/v/release/jeremyperson/llama-amp)](https://github.com/jeremyperson/llama-amp/releases/latest)
+[![CI](https://github.com/jeremyperson/llama-amp/actions/workflows/ci.yml/badge.svg)](https://github.com/jeremyperson/llama-amp/actions)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 A Winamp-inspired music player for Linux with a modern flat theme. Single-file
-Python/GTK3/GStreamer — no build step, no framework, ~4000 lines that whip.
+Python/GTK3/GStreamer — no build step, no framework, ~5000 lines that whip.
 
 ![Llama Amp](screenshots/llama-amp.png)
 
@@ -29,6 +33,7 @@ Python/GTK3/GStreamer — no build step, no framework, ~4000 lines that whip.
   multi-select, type-to-search, and a Play Next queue (right-click)
 - Named playlists, M3U import/export, recursive folder add,
   missing-file detection and cleanup
+- Drag & drop files or folders straight onto the window
 - Scrolling marquee for long titles on the LCD panel
 
 **Desktop integration**
@@ -38,6 +43,10 @@ Python/GTK3/GStreamer — no build step, no framework, ~4000 lines that whip.
 - ListenBrainz scrobbling (paste your user token in ⚙ → Scrobbling)
 - ALSA output device picker for the bit-perfect direct mode
 - Open audio files from your file manager ("Open With → Llama Amp")
+- Update notifications: checks GitHub Releases at startup and daily, with
+  one-click install from the ⚙ menu (installed copies download the new .deb
+  and hand it to the system installer; opt out via
+  ⚙ → "Check for Updates on Startup")
 - Keyboard shortcuts: `Space` play/pause · `←/→` seek ±5s · `↑/↓` volume ·
   `S` shuffle · `R` repeat · `J` jump-to-file · `Ctrl+O` add files ·
   `Ctrl+L` open URL · `Del` remove from playlist
@@ -71,7 +80,8 @@ sudo apt install ./packaging/dist/llama-amp_*.deb
 **Other distros** — a Flatpak manifest is provided; see
 [`packaging/README.md`](packaging/README.md).
 
-Installed copies keep settings in `~/.config/llamaamp/`.
+Installed copies keep settings in `~/.config/llamaamp/` and notify you
+in-app when a new release is available (update straight from the ⚙ menu).
 
 ## License
 
