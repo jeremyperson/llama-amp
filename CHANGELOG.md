@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2 — 2026-08-03
+
+- New original app icon: an LED spectrum ladder whose last bar rises into a
+  llama, drawn from the app's own theme palette. Replaces the previous
+  Winamp-derived bolt artwork.
+- The icon asset is renamed `musicPlayer.svg` → `llama-amp.svg` and the tray
+  indicator now registers under the `llama-amp` icon name, matching the name
+  the .deb installs into the hicolor theme (and avoiding stale icon-theme
+  caches from the old name).
+
 ## 1.1 — 2026-08-03
 
 - Fixed: song title and album art could disagree during gapless playback.

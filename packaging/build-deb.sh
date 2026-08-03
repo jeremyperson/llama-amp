@@ -20,7 +20,7 @@ mkdir -p dist \
 
 # App
 cp ../musicPlayer.py "$PKG/usr/share/llama-amp/"
-cp ../musicPlayer.svg "$PKG/usr/share/icons/hicolor/scalable/apps/llama-amp.svg"
+cp ../llama-amp.svg "$PKG/usr/share/icons/hicolor/scalable/apps/llama-amp.svg"
 
 # Launcher
 cat > "$PKG/usr/bin/llama-amp" <<'EOF'

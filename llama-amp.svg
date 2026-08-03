@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" version="1.1" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Llama Amp — original app icon.
+       A spectrum-analyzer ladder whose last bar rises into a llama.
+       Palette = app theme tokens: chassis #101210, hairline #2b302c,
+       accent #1ae000, accent-bright #52ff33. -->
+
+  <!-- Tile -->
+  <rect x="0" y="0" width="512" height="512" rx="100" fill="#101210"/>
+  <rect x="6" y="6" width="500" height="500" rx="94" fill="none" stroke="#2b302c" stroke-width="8"/>
+
+  <!-- Spectrum bars: segmented LED ladders, peak segment brighter -->
+  <g fill="#1ae000">
+    <!-- bar 1: 4 segments -->
+    <rect x="88" y="378" width="48" height="22" rx="6"/>
+    <rect x="88" y="348" width="48" height="22" rx="6"/>
+    <rect x="88" y="318" width="48" height="22" rx="6"/>
+    <rect x="88" y="288" width="48" height="22" rx="6" fill="#52ff33"/>
+    <!-- bar 2: 6 segments -->
+    <rect x="160" y="378" width="48" height="22" rx="6"/>
+    <rect x="160" y="348" width="48" height="22" rx="6"/>
+    <rect x="160" y="318" width="48" height="22" rx="6"/>
+    <rect x="160" y="288" width="48" height="22" rx="6"/>
+    <rect x="160" y="258" width="48" height="22" rx="6"/>
+    <rect x="160" y="228" width="48" height="22" rx="6" fill="#52ff33"/>
+    <!-- bar 3: 3 segments -->
+    <rect x="232" y="378" width="48" height="22" rx="6"/>
+    <rect x="232" y="348" width="48" height="22" rx="6"/>
+    <rect x="232" y="318" width="48" height="22" rx="6" fill="#52ff33"/>
+    <!-- bar 4: 5 segments -->
+    <rect x="304" y="378" width="48" height="22" rx="6"/>
+    <rect x="304" y="348" width="48" height="22" rx="6"/>
+    <rect x="304" y="318" width="48" height="22" rx="6"/>
+    <rect x="304" y="288" width="48" height="22" rx="6"/>
+    <rect x="304" y="258" width="48" height="22" rx="6" fill="#52ff33"/>
+  </g>
+
+  <!-- The llama: the fifth bar, risen and alive -->
+  <g fill="#1ae000">
+    <!-- neck (continuous bar) -->
+    <rect x="376" y="176" width="48" height="224" rx="10"/>
+    <!-- head, facing the music -->
+    <rect x="316" y="140" width="108" height="64" rx="26"/>
+    <!-- ears -->
+    <rect x="371" y="92" width="24" height="60" rx="11" transform="rotate(-4 383 152)"/>
+    <rect x="399" y="92" width="24" height="60" rx="11" transform="rotate(4 411 152)"/>
+  </g>
+  <!-- eye -->
+  <circle cx="346" cy="168" r="8" fill="#101210"/>
+
+  <!-- baseline -->
+  <rect x="80" y="410" width="352" height="6" rx="3" fill="#2b302c"/>
+</svg>

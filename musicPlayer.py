@@ -24,7 +24,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 # Application version
-APP_VERSION = "1.1"
+APP_VERSION = "1.2"
 
 # Application name (Winamp-inspired, but an original name — "Winamp" is a trademark)
 APP_NAME = "Llama Amp"
@@ -1554,7 +1554,7 @@ class MusicPlayer(Gtk.Window):
         if self.config.get("tray_icon") is False:
             return
         app_dir = os.path.dirname(os.path.abspath(__file__))
-        svg = os.path.join(app_dir, "musicPlayer.svg")
+        svg = os.path.join(app_dir, "llama-amp.svg")
         AI = None
         for module, version in (('AyatanaAppIndicator3', '0.1'), ('AppIndicator3', '0.1')):
             try:
@@ -1569,7 +1569,7 @@ class MusicPlayer(Gtk.Window):
                                        AI.IndicatorCategory.APPLICATION_STATUS)
                 if os.path.exists(svg):
                     ind.set_icon_theme_path(app_dir)
-                    ind.set_icon_full('musicPlayer', APP_NAME)
+                    ind.set_icon_full('llama-amp', APP_NAME)
                 ind.set_status(AI.IndicatorStatus.ACTIVE)
                 ind.set_menu(self._build_tray_menu())
                 self._tray = ind
@@ -1774,7 +1774,7 @@ class MusicPlayer(Gtk.Window):
             icon = art[7:]
         else:
             svg = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "musicPlayer.svg")
+                               "llama-amp.svg")
             if os.path.exists(svg):
                 icon = svg
 
@@ -4679,7 +4679,7 @@ class MusicPlayer(Gtk.Window):
             return self._default_art
         self._default_art_loaded = True
         candidates = (
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "musicPlayer.svg"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "llama-amp.svg"),
             "/usr/share/icons/hicolor/scalable/apps/llama-amp.svg",  # installed
         )
         for p in candidates:
