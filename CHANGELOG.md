@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.3 — 2026-08-03
+
+- In-app update notifications: the app checks GitHub Releases 15 s after
+  startup and once a day while running, notifying (desktop popup + LCD
+  flash) when a newer version exists. Silent on failure and when current;
+  each version is announced only once. Opt out via
+  ⚙ → "Check for Updates on Startup" (no network calls when disabled).
+- Manual ⚙ → "Check for Updates…" with an explicit up-to-date / failed
+  dialog, offering to install when an update exists.
+- GUI update flow: once an update is known the menu item becomes
+  "⬆ Update to vX…" — installed (.deb) copies download the new package to
+  Downloads and hand it to the system installer (normal admin-password
+  prompt, no in-app privilege escalation); portable checkouts open the
+  releases page instead.
+
 ## 1.2 — 2026-08-03
 
 - New original app icon: an LED spectrum ladder whose last bar rises into a

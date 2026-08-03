@@ -24,13 +24,19 @@ from contextlib import contextmanager
 from pathlib import Path
 
 # Application version
-APP_VERSION = "1.2"
+APP_VERSION = "1.3"
 
 # Application name (Winamp-inspired, but an original name — "Winamp" is a trademark)
 APP_NAME = "Llama Amp"
 
 # Default display text
 DEFAULT_SONG_TEXT = f"{APP_NAME} *** Please select a file ***"
+
+# Update check (GitHub releases)
+UPDATE_API_URL = "https://api.github.com/repos/jeremyperson/llama-amp/releases/latest"
+RELEASES_URL = "https://github.com/jeremyperson/llama-amp/releases"
+UPDATE_CHECK_DELAY_S = 15        # let startup finish before touching the network
+UPDATE_RECHECK_S = 86400         # long-running sessions re-check daily
 
 # ---- Tunables / constants ----
 WINDOW_W, WINDOW_H = 360, 500
@@ -278,6 +284,16 @@ class MusicPlayer(Gtk.Window):
 
         # System tray / app indicator
         self._init_tray()
+
+        # New-release check (GitHub), delayed so startup never waits on it;
+        # long-running sessions re-check daily. Both respect the ⚙ toggle
+        # at fire time, so disabling it needs no restart.
+        self._update_info = None
+        if self.config.get("update_check", True) is not False:
+            GLib.timeout_add_seconds(UPDATE_CHECK_DELAY_S,
+                                     self._startup_update_check)
+        self._timeout_ids.append(GLib.timeout_add_seconds(
+            UPDATE_RECHECK_S, self._periodic_update_check))
 
     # ==================== Real audio DSP (EQ / balance / spectrum) ====================
     def build_audio_filter(self, analyzer_only=False):
@@ -1280,6 +1296,7 @@ class MusicPlayer(Gtk.Window):
             "listenbrainz_token": None,
             "scrobble_enabled": False,
             "notifications": True,
+            "update_check": True,
         }
         data = {}
         try:
@@ -1406,6 +1423,7 @@ class MusicPlayer(Gtk.Window):
                 "listenbrainz_token": self.config.get("listenbrainz_token"),
                 "scrobble_enabled": self.config.get("scrobble_enabled") is True,
                 "notifications": self.config.get("notifications", True) is not False,
+                "update_check": self.config.get("update_check", True) is not False,
             }
             serialized = json.dumps(data, indent=2)
             if serialized == self._last_config_json:
@@ -1801,6 +1819,148 @@ class MusicPlayer(Gtk.Window):
         self.schedule_save_config()
         self.show_drop_feedback(
             "Notifications on" if self.config['notifications'] else "Notifications off")
+
+    # ==================== Update check ====================
+
+    def _startup_update_check(self):
+        self._check_updates(manual=False)
+        return False  # one-shot timer
+
+    def _periodic_update_check(self):
+        if self.config.get("update_check", True) is not False:
+            self._check_updates(manual=False)
+        return True  # keep the daily timer alive
+
+    def _check_updates(self, manual=False):
+        """Ask GitHub for the latest release (worker thread; UI via idle_add)."""
+        def worker():
+            info, err = None, None
+            try:
+                req = urllib.request.Request(
+                    UPDATE_API_URL,
+                    headers={'User-Agent': f'llama-amp/{APP_VERSION}',
+                             'Accept': 'application/vnd.github+json'})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    rel = json.load(resp)
+                deb = next((a.get('browser_download_url')
+                            for a in rel.get('assets', [])
+                            if (a.get('name') or '').endswith('.deb')), None)
+                info = {'version': (rel.get('tag_name') or '').lstrip('v'),
+                        'url': rel.get('html_url') or RELEASES_URL,
+                        'deb_url': deb}
+            except Exception as e:
+                err = str(e)
+            GLib.idle_add(self._check_updates_done, info, err, manual)
+        threading.Thread(target=worker, daemon=True, name='update-check').start()
+
+    @staticmethod
+    def _version_tuple(v):
+        return tuple(int(x) for x in re.findall(r'\d+', v or ''))
+
+    def _check_updates_done(self, info, err, manual):
+        """UI-thread result: remember a newer release and surface it."""
+        newer = (info and info['version'] and
+                 self._version_tuple(info['version']) > self._version_tuple(APP_VERSION))
+        if newer:
+            # The daily re-check shouldn't re-announce a version it already
+            # surfaced — notify only the first time each version is seen.
+            already_known = (self._update_info or {}).get('version') == info['version']
+            self._update_info = info
+            if manual:
+                self._offer_update_dialog(info)
+            elif not already_known:
+                self.show_drop_feedback(f"v{info['version']} available — see ⚙ menu")
+                self._notify_track(f"{APP_NAME} {info['version']} is available",
+                                   "Update from the ⚙ menu")
+        elif manual:
+            dialog = Gtk.MessageDialog(
+                transient_for=self, modal=True, message_type=Gtk.MessageType.INFO,
+                buttons=Gtk.ButtonsType.OK,
+                text=("Could not check for updates" if err
+                      else f"{APP_NAME} {APP_VERSION} is up to date"))
+            if err:
+                dialog.format_secondary_text(err)
+            dialog.run()
+            dialog.destroy()
+        if err:
+            self.log_debug(f"update check failed: {err}")
+        return False
+
+    def _offer_update_dialog(self, info):
+        dialog = Gtk.MessageDialog(
+            transient_for=self, modal=True, message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.YES_NO,
+            text=f"{APP_NAME} {info['version']} is available (you have {APP_VERSION})")
+        dialog.format_secondary_text("Download and install it now?")
+        response = dialog.run()
+        dialog.destroy()
+        if response == Gtk.ResponseType.YES:
+            self._start_update()
+
+    def _start_update(self, *_args):
+        """GUI update path. Installed (.deb) copies download the new package and
+        hand it to the system installer (which prompts for the admin password);
+        portable checkouts just get the release page."""
+        info = self._update_info
+        if not info:
+            return
+        installed = os.path.abspath(__file__).startswith('/usr/')
+        if not installed or not info.get('deb_url'):
+            try:
+                Gtk.show_uri_on_window(self, info['url'], Gdk.CURRENT_TIME)
+            except Exception as e:
+                self.log_debug(f"open releases page failed: {e}")
+            return
+        dest_dir = (GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD)
+                    or GLib.get_home_dir())
+        dest = os.path.join(dest_dir, os.path.basename(info['deb_url']))
+        self.show_drop_feedback(f"Downloading v{info['version']}…")
+
+        def worker():
+            err = None
+            try:
+                req = urllib.request.Request(
+                    info['deb_url'],
+                    headers={'User-Agent': f'llama-amp/{APP_VERSION}'})
+                with urllib.request.urlopen(req, timeout=60) as r, \
+                        open(dest + '.part', 'wb') as f:
+                    while True:
+                        chunk = r.read(1 << 16)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                os.replace(dest + '.part', dest)
+            except Exception as e:
+                err = str(e)
+            GLib.idle_add(self._update_downloaded, dest, err)
+        threading.Thread(target=worker, daemon=True, name='update-download').start()
+
+    def _update_downloaded(self, dest, err):
+        if err:
+            self.log_debug(f"update download failed: {err}")
+            self.show_drop_feedback("Download failed — opening releases page")
+            try:
+                Gtk.show_uri_on_window(self, self._update_info['url'],
+                                       Gdk.CURRENT_TIME)
+            except Exception:
+                pass
+            return False
+        self.show_drop_feedback("Opening installer…")
+        try:
+            # Hands the .deb to the software installer; it prompts for the
+            # admin password and replaces the running version in place.
+            Gio.AppInfo.launch_default_for_uri(f'file://{dest}', None)
+        except Exception as e:
+            self.log_debug(f"launch installer failed: {e}")
+            self.show_drop_feedback(f"Saved to {dest}")
+        return False
+
+    def _toggle_update_check(self, *_args):
+        enabled = self.config.get('update_check', True) is False
+        self.config['update_check'] = enabled
+        self.schedule_save_config()
+        self.show_drop_feedback(
+            "Startup update check on" if enabled else "Startup update check off")
 
     # ==================== MPRIS2 (media keys / desktop integration) ====================
 
@@ -2781,6 +2941,23 @@ class MusicPlayer(Gtk.Window):
         menu.append(sleep_item)
 
         menu.append(Gtk.SeparatorMenuItem())
+
+        # Updates: one action item (check, or install if one is known) plus
+        # the startup-check toggle
+        if getattr(self, '_update_info', None):
+            update_item = Gtk.MenuItem(
+                label=f"⬆ Update to v{self._update_info['version']}…")
+            update_item.connect("activate", self._start_update)
+        else:
+            update_item = Gtk.MenuItem(label="Check for Updates…")
+            update_item.connect("activate",
+                                lambda _w: self._check_updates(manual=True))
+        menu.append(update_item)
+
+        autoupd_item = Gtk.CheckMenuItem(label="Check for Updates on Startup")
+        autoupd_item.set_active(self.config.get('update_check', True) is not False)
+        autoupd_item.connect("toggled", self._toggle_update_check)
+        menu.append(autoupd_item)
 
         about_item = Gtk.MenuItem(label=f"About {APP_NAME}")
         about_item.connect("activate", self.show_about_dialog)
