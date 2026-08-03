@@ -25,24 +25,21 @@ Uninstall: `sudo apt remove llama-amp`
 
 ## Any other Linux distro — Flatpak
 
-`com.jeremyperson.LlamaAmp.yml` is a ready flatpak-builder manifest
-(GNOME 46 runtime; includes MPRIS, PulseAudio, and raw ALSA device access
-for the bit-perfect output mode).
+`flatpak/com.jeremyperson.LlamaAmp.yml` is a self-contained flatpak-builder
+manifest (GNOME 48 runtime; includes MPRIS, PulseAudio, network for radio
+streams, and raw ALSA device access for the bit-perfect output mode). It
+builds straight from the pinned release tag — no staging step:
 
     # one-time setup
-    flatpak install flathub org.gnome.Platform//46 org.gnome.Sdk//46
+    flatpak install flathub org.gnome.Platform//48 org.gnome.Sdk//48
 
-    # stage sources the manifest expects
-    mkdir -p flatpak-src/fonts
-    cp ../musicPlayer.py ../musicPlayer.svg flatpak-src/
-    cp ~/.local/share/fonts/dseg/* ~/.local/share/fonts/orbitron/* flatpak-src/fonts/
-    # (create llama-amp.sh + .desktop as shown in build-deb.sh, with
-    #  /app paths instead of /usr)
+    flatpak-builder --user --install --force-clean build-flatpak \
+      flatpak/com.jeremyperson.LlamaAmp.yml
 
-    flatpak-builder --user --install --force-clean build-flatpak com.jeremyperson.LlamaAmp.yml
-
-Once published to Flathub, this is what makes the app installable from the
-GUI software center on Fedora, Arch, openSUSE, Steam Deck, etc.
+The same manifest is submitted to Flathub; once accepted the app is a
+software-center install (`flatpak install flathub com.jeremyperson.LlamaAmp`)
+on Fedora, Arch, openSUSE, Steam Deck, etc. Flatpak builds receive updates
+through the store, so the in-app update checker stays out of the way there.
 
 ## Windows / macOS — the honest note
 

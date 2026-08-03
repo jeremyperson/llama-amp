@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4 — 2026-08-03
+
+- Flathub-ready Flatpak packaging: the manifest
+  (`packaging/flatpak/com.jeremyperson.LlamaAmp.yml`) now builds straight
+  from the release tag with pinned font sources — no manual staging — and
+  installs AppStream metadata, an app-id desktop entry, and the icon under
+  the app id. Also adds the previously missing network permission
+  (internet radio / scrobbling).
+- Inside Flatpak the update checker disables itself entirely (no version
+  checks, no update menu items): the store owns updates there.
+
 ## 1.3 — 2026-08-03
 
 - In-app update notifications: the app checks GitHub Releases 15 s after

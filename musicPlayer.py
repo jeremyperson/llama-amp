@@ -24,7 +24,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 # Application version
-APP_VERSION = "1.3"
+APP_VERSION = "1.4"
 
 # Application name (Winamp-inspired, but an original name — "Winamp" is a trademark)
 APP_NAME = "Llama Amp"
@@ -37,6 +37,8 @@ UPDATE_API_URL = "https://api.github.com/repos/jeremyperson/llama-amp/releases/l
 RELEASES_URL = "https://github.com/jeremyperson/llama-amp/releases"
 UPDATE_CHECK_DELAY_S = 15        # let startup finish before touching the network
 UPDATE_RECHECK_S = 86400         # long-running sessions re-check daily
+# Inside Flatpak the store owns updates: no version checks, no update UI.
+IS_FLATPAK = os.path.exists('/.flatpak-info')
 
 # ---- Tunables / constants ----
 WINDOW_W, WINDOW_H = 360, 500
@@ -289,11 +291,12 @@ class MusicPlayer(Gtk.Window):
         # long-running sessions re-check daily. Both respect the ⚙ toggle
         # at fire time, so disabling it needs no restart.
         self._update_info = None
-        if self.config.get("update_check", True) is not False:
-            GLib.timeout_add_seconds(UPDATE_CHECK_DELAY_S,
-                                     self._startup_update_check)
-        self._timeout_ids.append(GLib.timeout_add_seconds(
-            UPDATE_RECHECK_S, self._periodic_update_check))
+        if not IS_FLATPAK:
+            if self.config.get("update_check", True) is not False:
+                GLib.timeout_add_seconds(UPDATE_CHECK_DELAY_S,
+                                         self._startup_update_check)
+            self._timeout_ids.append(GLib.timeout_add_seconds(
+                UPDATE_RECHECK_S, self._periodic_update_check))
 
     # ==================== Real audio DSP (EQ / balance / spectrum) ====================
     def build_audio_filter(self, analyzer_only=False):
@@ -2943,21 +2946,23 @@ class MusicPlayer(Gtk.Window):
         menu.append(Gtk.SeparatorMenuItem())
 
         # Updates: one action item (check, or install if one is known) plus
-        # the startup-check toggle
-        if getattr(self, '_update_info', None):
-            update_item = Gtk.MenuItem(
-                label=f"⬆ Update to v{self._update_info['version']}…")
-            update_item.connect("activate", self._start_update)
-        else:
-            update_item = Gtk.MenuItem(label="Check for Updates…")
-            update_item.connect("activate",
-                                lambda _w: self._check_updates(manual=True))
-        menu.append(update_item)
+        # the startup-check toggle. Hidden in Flatpak — the store updates it.
+        if not IS_FLATPAK:
+            if getattr(self, '_update_info', None):
+                update_item = Gtk.MenuItem(
+                    label=f"⬆ Update to v{self._update_info['version']}…")
+                update_item.connect("activate", self._start_update)
+            else:
+                update_item = Gtk.MenuItem(label="Check for Updates…")
+                update_item.connect("activate",
+                                    lambda _w: self._check_updates(manual=True))
+            menu.append(update_item)
 
-        autoupd_item = Gtk.CheckMenuItem(label="Check for Updates on Startup")
-        autoupd_item.set_active(self.config.get('update_check', True) is not False)
-        autoupd_item.connect("toggled", self._toggle_update_check)
-        menu.append(autoupd_item)
+            autoupd_item = Gtk.CheckMenuItem(label="Check for Updates on Startup")
+            autoupd_item.set_active(
+                self.config.get('update_check', True) is not False)
+            autoupd_item.connect("toggled", self._toggle_update_check)
+            menu.append(autoupd_item)
 
         about_item = Gtk.MenuItem(label=f"About {APP_NAME}")
         about_item.connect("activate", self.show_about_dialog)

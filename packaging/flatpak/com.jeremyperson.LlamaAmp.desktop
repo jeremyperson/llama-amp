@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Llama Amp
+Comment=Winamp-inspired music player
+Exec=llama-amp %F
+Icon=com.jeremyperson.LlamaAmp
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Player;GTK;
+MimeType=audio/mpeg;audio/mp3;audio/flac;audio/x-flac;audio/wav;audio/x-wav;audio/ogg;audio/x-vorbis+ogg;audio/mp4;audio/aac;audio/x-m4a;

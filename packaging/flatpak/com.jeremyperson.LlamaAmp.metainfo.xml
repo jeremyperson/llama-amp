@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.jeremyperson.LlamaAmp</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>Llama Amp</name>
+  <summary>Winamp-inspired music player</summary>
+
+  <developer id="com.jeremyperson">
+    <name>Jeremy Person</name>
+  </developer>
+
+  <description>
+    <p>
+      A Winamp-inspired music player for Linux with a modern flat theme —
+      LED clock, spectrum analyzer, and a 10-band equalizer, without the
+      Windows-98 pixel art.
+    </p>
+    <ul>
+      <li>Gapless playback and ReplayGain volume normalization</li>
+      <li>Direct Mode: bit-transparent output with the spectrum analyzer kept alive</li>
+      <li>ALSA direct output: exclusive DAC access, bypassing the desktop mixer</li>
+      <li>Internet radio (SHOUTcast/Icecast) with live now-playing titles</li>
+      <li>10-band equalizer with presets and LED-ladder spectrum meters</li>
+      <li>Playlists: durations, drag-reorder, type-to-search, Play Next queue, M3U import/export</li>
+      <li>Album art from embedded tags or folder art</li>
+      <li>MPRIS2 media keys, tray icon, desktop notifications, ListenBrainz scrobbling</li>
+      <li>Shuffle by tracks or albums, tri-state repeat, sleep timer</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">com.jeremyperson.LlamaAmp.desktop</launchable>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/jeremyperson/llama-amp/v1.4/screenshots/llama-amp.png</image>
+      <caption>Main window: LCD panel, spectrum analyzer, equalizer, and playlist</caption>
+    </screenshot>
+  </screenshots>
+
+  <url type="homepage">https://github.com/jeremyperson/llama-amp</url>
+  <url type="bugtracker">https://github.com/jeremyperson/llama-amp/issues</url>
+  <url type="vcs-browser">https://github.com/jeremyperson/llama-amp</url>
+
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Player</category>
+  </categories>
+
+  <keywords>
+    <keyword>music</keyword>
+    <keyword>player</keyword>
+    <keyword>audio</keyword>
+    <keyword>winamp</keyword>
+    <keyword>equalizer</keyword>
+    <keyword>mp3</keyword>
+    <keyword>flac</keyword>
+  </keywords>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#52ff33</color>
+    <color type="primary" scheme_preference="dark">#101210</color>
+  </branding>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="1.4" date="2026-08-03">
+      <description>
+        <p>Flatpak support: store-managed updates (the in-app update checker
+        disables itself inside the sandbox) and Flathub packaging.</p>
+      </description>
+    </release>
+    <release version="1.3" date="2026-08-03">
+      <description>
+        <p>In-app update notifications and a GUI update flow.</p>
+      </description>
+    </release>
+    <release version="1.2" date="2026-08-03">
+      <description>
+        <p>New original app icon.</p>
+      </description>
+    </release>
+    <release version="1.1" date="2026-08-03">
+      <description>
+        <p>Fixed song title and album art disagreeing during gapless playback.</p>
+      </description>
+    </release>
+    <release version="1.0" date="2026-08-01">
+      <description>
+        <p>First public release.</p>
+      </description>
+    </release>
+  </releases>
+</component>
