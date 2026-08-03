@@ -56,4 +56,4 @@ modules:
       - type: git
         url: https://github.com/jeremyperson/llama-amp.git
         tag: v1.4
-        commit: COMMIT_PLACEHOLDER
+        commit: dbd7fba985bead73db425bf19581b53d0c72a734
