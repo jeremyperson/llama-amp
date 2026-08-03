@@ -70,7 +70,16 @@ the authentic LED clock and wordmark — the app degrades gracefully without.
 
 ## Installing
 
-**Debian/Ubuntu/Mint** — build the package (fonts are fetched automatically):
+**Debian/Ubuntu/Mint — apt repository** (recommended; updates arrive with
+`apt upgrade`):
+
+```bash
+curl -fsSL https://jeremyperson.github.io/llama-amp-apt/llama-amp.gpg | sudo tee /usr/share/keyrings/llama-amp.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/llama-amp.gpg] https://jeremyperson.github.io/llama-amp-apt stable main" | sudo tee /etc/apt/sources.list.d/llama-amp.list
+sudo apt update && sudo apt install llama-amp
+```
+
+Or build the .deb yourself (fonts are fetched automatically):
 
 ```bash
 ./packaging/build-deb.sh
