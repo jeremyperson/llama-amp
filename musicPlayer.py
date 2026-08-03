@@ -24,7 +24,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 # Application version
-APP_VERSION = "1.0"
+APP_VERSION = "1.1"
 
 # Application name (Winamp-inspired, but an original name — "Winamp" is a trademark)
 APP_NAME = "Llama Amp"
@@ -849,6 +849,34 @@ class MusicPlayer(Gtk.Window):
         taglist = message.parse_tag()
         title = self._tag_str(taglist, Gst.TAG_TITLE)
         artist = self._tag_str(taglist, Gst.TAG_ARTIST)
+        # Tags arriving while a gapless next track prerolls belong to THAT
+        # track (current-uri still reports the old one until stream-start).
+        # Applying them here flips the title/bitrate early and caches the next
+        # track's cover under the current track's path — the title/art
+        # mismatch. Cache them for the pending track and leave the display
+        # alone; the stream-start handoff applies them via _post_load_ui.
+        pending = self._gapless_next
+        if pending is not None:
+            path = pending[1]
+            if title:
+                cached = self._cache_get(self._meta_cache, path)
+                if isinstance(cached, dict):
+                    merged = dict(cached)
+                    merged['title'] = title
+                    if artist:
+                        merged['artist'] = artist
+                    self._cache_put(self._meta_cache, path, merged)
+            if self._cache_get(self._art_cache, path) is None:
+                ok, sample = taglist.get_sample(Gst.TAG_IMAGE)
+                if not ok:
+                    ok, sample = taglist.get_sample(Gst.TAG_PREVIEW_IMAGE)
+                if ok and sample:
+                    data = self._sample_to_bytes(sample)
+                    if data:
+                        pixbuf = self._decode_art_pixbuf(data)
+                        if pixbuf:
+                            self._cache_put(self._art_cache, path, pixbuf)
+            return
         ok, br = taglist.get_uint(Gst.TAG_BITRATE)
         if not ok:
             ok, br = taglist.get_uint(Gst.TAG_NOMINAL_BITRATE)

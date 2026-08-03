@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1 — 2026-08-03
+
+- Fixed: song title and album art could disagree during gapless playback.
+  Tags from the prerolling next track were applied while the previous track
+  was still on screen — flipping the title and bitrate readout early and
+  caching the next track's cover art under the wrong file, which then showed
+  the wrong cover whenever that track played again in the session. Preroll
+  tags are now cached for the upcoming track and applied only at the
+  stream-start handoff.
+
 ## 1.0 — 2026-08-01
 
 First public release.
