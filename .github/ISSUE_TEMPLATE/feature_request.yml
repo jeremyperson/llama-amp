@@ -1,0 +1,27 @@
+name: Feature request
+description: An idea that would make it whip harder
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's the itch?
+      description: The situation where you missed this feature — not just the feature itself.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds or alternatives you've considered
+  - type: markdown
+    attributes:
+      value: >-
+        Heads-up: Llama Amp is intentionally a single-file app on a stock
+        GTK3/GStreamer stack — features needing new dependencies or heavy
+        architecture get extra scrutiny (see CONTRIBUTING.md).

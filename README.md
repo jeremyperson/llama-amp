@@ -83,6 +83,13 @@ sudo apt install ./packaging/dist/llama-amp_*.deb
 Installed copies keep settings in `~/.config/llamaamp/` and notify you
 in-app when a new release is available (update straight from the ⚙ menu).
 
+## Contributing
+
+Bug reports, feature ideas, and PRs are welcome — see
+[CONTRIBUTING.md](CONTRIBUTING.md) for the dev setup and the (few) ground
+rules. The short version: it's one file on a stock GTK3/GStreamer stack,
+and we'd like to keep it that way.
+
 ## License
 
 MIT (see [LICENSE](LICENSE)). Bundled at package-build time: DSEG7 Classic

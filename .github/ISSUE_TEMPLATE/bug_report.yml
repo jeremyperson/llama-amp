@@ -1,0 +1,55 @@
+name: Bug report
+description: Something broken or behaving oddly
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Llama Amp version
+      description: Title bar or ⚙ → About
+      placeholder: "1.4"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How is it installed?
+      options:
+        - .deb package
+        - Flatpak
+        - Portable checkout (python3 musicPlayer.py)
+    validations:
+      required: true
+  - type: input
+    id: distro
+    attributes:
+      label: Distro / desktop
+      placeholder: "Ubuntu 26.04, GNOME (X11)"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Add a folder of FLACs
+        2. Enable shuffle
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Terminal output
+      description: >-
+        Run `python3 musicPlayer.py` (portable), `llama-amp` (.deb), or
+        `flatpak run com.jeremyperson.LlamaAmp` from a terminal and paste
+        anything it prints around the problem.
+      render: text
