@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Winamp-style readouts on the display: inset kbps and kHz digits and
+  mono/stereo indicator lights. The info line keeps the format, channel
+  count beyond stereo, and shuffle/repeat state.
 - Double size (Ctrl+D, or Settings → View): the whole interface at 2×,
   pixel for pixel, including fonts, bevels, LED meters, icons and album
   art. The setting and the enlarged window size are remembered.

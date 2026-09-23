@@ -129,10 +129,26 @@ class ControlsMixin:
         self.analyzer.connect('unmap', lambda *_: self._update_analyzer_visibility())
         middle.pack_start(self.analyzer, True, True, 0)
         box.pack_start(middle, False, False, 0)
+        info_row = Gtk.Box(spacing=4)
         self.info_label = Gtk.Label(xalign=0)
         self.info_label.set_ellipsize(Pango.EllipsizeMode.END)
         self.info_label.get_style_context().add_class('muted')
-        box.pack_start(self.info_label, False, False, 0)
+        info_row.pack_start(self.info_label, True, True, 0)
+        # Winamp's readouts: inset kbps/kHz digits and mono/stereo lights
+        self.kbps_value, self.khz_value = Gtk.Label(label='—'), Gtk.Label(label='—')
+        for value, unit in ((self.kbps_value, 'kbps'), (self.khz_value, 'kHz')):
+            value.set_width_chars(4)
+            value.set_xalign(1)
+            value.get_style_context().add_class('readout-value')
+            info_row.pack_start(value, False, False, 0)
+            unit_label = Gtk.Label(label=unit)
+            unit_label.get_style_context().add_class('readout-unit')
+            info_row.pack_start(unit_label, False, False, 0)
+        self.mono_light, self.stereo_light = Gtk.Label(label='mono'), Gtk.Label(label='stereo')
+        for light in (self.mono_light, self.stereo_light):
+            light.get_style_context().add_class('channel-light')
+            info_row.pack_start(light, False, False, 0)
+        box.pack_start(info_row, False, False, 0)
         box.pack_start(self.create_position_slider(), False, False, 0)
         frame.add(box)
         return frame
@@ -619,9 +635,11 @@ class ControlsMixin:
         bitrate = self.audio_properties['bitrate']
         channels = self.audio_properties['channels']
         
-        # Convert sample rate to kHz
-        sample_rate_khz = f'{sample_rate / 1000:g}' if sample_rate else '—'
-        
+        self.kbps_value.set_text(str(bitrate) if bitrate else '—')
+        self.khz_value.set_text(f'{sample_rate / 1000:g}' if sample_rate else '—')
+        for light, lit in ((self.mono_light, channels == 1), (self.stereo_light, channels == 2)):
+            (light.get_style_context().add_class if lit else light.get_style_context().remove_class)('lit')
+
         # Get dynamic file type from current song or provided file path
         file_type = "AUDIO"  # Default fallback
         target_file = file_path or self.current_song
@@ -646,10 +664,8 @@ class ControlsMixin:
             else:
                 file_type = file_ext[1:].upper() if file_ext else "AUDIO"
         
-        # Update info label with shuffle/repeat status
-        channel_text = {0: '—', 1: 'Mono', 2: 'Stereo'}.get(channels, f'{channels} channels')
-        status_parts = [f"{file_type} · {sample_rate_khz} kHz · {bitrate or '—'} kbps · {channel_text}"]
-        
+        # Format and shuffle/repeat status; the lights cover mono and stereo only
+        status_parts = [file_type if channels in (0, 1, 2) else f"{file_type} · {channels} ch"]
         if self.shuffle == SHUFFLE_ALBUMS:
             status_parts.append("ALBUMS")
         elif self.shuffle == SHUFFLE_TRACKS:

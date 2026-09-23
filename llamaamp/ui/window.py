@@ -164,6 +164,11 @@ class WindowMixin:
                            border-radius: 2px; padding: 3px; min-height: 20px; font-size: 11px; }
         .search-miss { border-color: #e78d55; }
         .muted { color: TEXT; font-size: 10px; opacity: .8; }
+        .readout-value { background: #000; color: ACCENT; font: bold 11px "Liberation Mono", monospace;
+            border: 1px solid #050705; border-bottom-color: CONTROL; padding: 0 3px; }
+        .readout-unit, .channel-light { color: TEXT; font: 9px "DejaVu Sans"; opacity: .8; }
+        .channel-light { opacity: .3; }
+        .channel-light.lit { color: ACCENT; opacity: 1; }
         .panel-header { padding: 2px; }
         .music-player-main.drag-over { border-color: ACCENT; }
         """

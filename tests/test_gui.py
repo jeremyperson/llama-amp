@@ -88,15 +88,25 @@ class PlayerTests(unittest.TestCase):
         a = self.app
         a._add_paths(self.files)
         self.pump(.15)
-        title, metadata = a.song_label.get_text(), a.info_label.get_text()
+        readout = lambda: (a.song_label.get_text(), a.info_label.get_text(),
+                           a.kbps_value.get_text(), a.khz_value.get_text())
+        before = readout()
         a._select_row(2)
         self.pump(.03)
-        self.assertEqual(a.song_label.get_text(), title)
-        self.assertEqual(a.info_label.get_text(), metadata)
+        self.assertEqual(readout(), before)
         a.audio_properties = dict(sample_rate=44100, bitrate=900, channels=6)
         a.update_audio_display()
-        self.assertIn('44.1 kHz', a.info_label.get_text())
-        self.assertIn('6 channels', a.info_label.get_text())
+        self.assertEqual(a.kbps_value.get_text(), '900')
+        self.assertEqual(a.khz_value.get_text(), '44.1')
+        self.assertIn('6 ch', a.info_label.get_text())
+        lit = lambda label: label.get_style_context().has_class('lit')
+        self.assertFalse(lit(a.mono_light) or lit(a.stereo_light))
+        a.audio_properties = dict(sample_rate=16000, bitrate=0, channels=1)
+        a.update_audio_display()
+        self.assertEqual((a.kbps_value.get_text(), a.khz_value.get_text()), ('—', '16'))
+        self.assertTrue(lit(a.mono_light))
+        self.assertFalse(lit(a.stereo_light))
+        self.assertNotIn('kHz', a.info_label.get_text())
 
     def test_play_pause_stop_have_distinct_markers_and_mpris_states(self):
         a = self.app
