@@ -55,5 +55,5 @@ modules:
     sources:
       - type: git
         url: https://github.com/jeremyperson/llama-amp.git
-        tag: v1.4
-        commit: dbd7fba985bead73db425bf19581b53d0c72a734
+        tag: v1.5
+        commit: 51f45d3514c7dd0c09b24bbab33314ddbb277c62
