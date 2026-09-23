@@ -642,32 +642,19 @@ class ControlsMixin:
         for light, lit in ((self.mono_light, channels == 1), (self.stereo_light, channels == 2)):
             (light.get_style_context().add_class if lit else light.get_style_context().remove_class)('lit')
 
-        # Get dynamic file type from current song or provided file path
-        file_type = "AUDIO"  # Default fallback
+        # Format (the file extension, NET for streams, nothing when idle) and
+        # shuffle/repeat status; the lights cover mono and stereo only
         target_file = file_path or self.current_song
-        if target_file and self._is_stream_url(target_file):
+        if not target_file:
+            file_type = None
+        elif self._is_stream_url(target_file):
             file_type = "NET"
-        elif target_file:
-            file_ext = os.path.splitext(target_file)[1].lower()
-            if file_ext == '.mp3':
-                file_type = "MP3"
-            elif file_ext == '.flac':
-                file_type = "FLAC"
-            elif file_ext == '.wav':
-                file_type = "WAV"
-            elif file_ext == '.ogg':
-                file_type = "OGG"
-            elif file_ext == '.m4a':
-                file_type = "M4A"
-            elif file_ext == '.aac':
-                file_type = "AAC"
-            elif file_ext == '.wma':
-                file_type = "WMA"
-            else:
-                file_type = file_ext[1:].upper() if file_ext else "AUDIO"
-        
-        # Format and shuffle/repeat status; the lights cover mono and stereo only
-        status_parts = [file_type if channels in (0, 1, 2) else f"{file_type} · {channels} ch"]
+        else:
+            file_type = os.path.splitext(target_file)[1][1:].upper() or _("AUDIO")
+        status_parts = []
+        if file_type:
+            status_parts.append(file_type if channels in (0, 1, 2)
+                                else _('{format} · {count} ch').format(format=file_type, count=channels))
         if self.shuffle == SHUFFLE_ALBUMS:
             status_parts.append(_("ALBUMS"))
         elif self.shuffle == SHUFFLE_TRACKS:

@@ -1055,8 +1055,7 @@ class EngineMixin:
         self.shuffle = (self.shuffle + 1) % 3
         self.update_shuffle_button()
         self.schedule_save_config()
-        if self.current_song:
-            self.update_audio_display()
+        self.update_audio_display()
         self._mpris_emit({'Shuffle': GLib.Variant('b', self.shuffle != SHUFFLE_OFF)})
 
     def toggle_repeat(self, button):
@@ -1065,8 +1064,7 @@ class EngineMixin:
         self.repeat_mode = (self.repeat_mode + 1) % 3
         self.update_repeat_button()
         self.schedule_save_config()
-        if self.current_song:
-            self.update_audio_display()
+        self.update_audio_display()
         loop = {REPEAT_OFF: 'None', REPEAT_ALL: 'Playlist', REPEAT_ONE: 'Track'}
         self._mpris_emit({'LoopStatus': GLib.Variant('s', loop[self.repeat_mode])})
 

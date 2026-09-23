@@ -120,6 +120,16 @@ class PlayerTests(unittest.TestCase):
         self.assertFalse(lit(a.stereo_light))
         self.assertNotIn('kHz', a.info_label.get_text())
 
+    def test_idle_info_line_shows_no_format(self):
+        a = self.app
+        a.update_audio_display()
+        self.assertEqual(a.info_label.get_text(), '')
+        a.toggle_shuffle(None)
+        self.assertEqual(a.info_label.get_text(), 'SHUFFLE')
+        a._add_paths(self.files)
+        a.update_audio_display()
+        self.assertTrue(a.info_label.get_text().startswith('WAV'))
+
     def test_play_pause_stop_have_distinct_markers_and_mpris_states(self):
         a = self.app
         a._add_paths(self.files)
