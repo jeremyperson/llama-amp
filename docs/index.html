@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Llama Amp — a Winamp-inspired music player for Linux</title>
+<meta name="description" content="Llama Amp: a Winamp-inspired music player for Linux with real Winamp 2 skins, gapless and bit-perfect playback, crossfade, an equalizer and a live spectrum analyzer.">
+<link rel="icon" href="assets/llama-amp.svg" type="image/svg+xml">
+<meta property="og:title" content="Llama Amp">
+<meta property="og:description" content="A Winamp-inspired music player for Linux. Real Winamp 2 skins, gapless and bit-perfect playback.">
+<meta property="og:image" content="https://jeremyperson.github.io/llama-amp/assets/modern.png">
+<style>
+  :root {
+    --chassis: #101510; --panel: #1b231c; --control: #303b31; --lcd: #081007;
+    --text: #d8e5d7; --muted: #9fb09e; --accent: #52ef34; --amber: #ffba45;
+    --radius: 6px; --max: 1080px;
+  }
+  * { box-sizing: border-box; }
+  html { color-scheme: dark; }
+  body { margin: 0; background: var(--chassis); color: var(--text);
+         font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "DejaVu Sans", sans-serif; }
+  a { color: var(--accent); }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 16px; }
+  header.hero { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; padding: 56px 0 40px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand img { width: 44px; height: 44px; }
+  .brand span { font: 700 14px/1 "DejaVu Sans Mono", monospace; letter-spacing: .12em; color: var(--accent); }
+  h1 { font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.1; margin: 18px 0 14px; }
+  .lede { color: var(--muted); font-size: 1.15rem; margin: 0 0 24px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; }
+  .button { display: inline-block; padding: 10px 18px; border-radius: var(--radius); text-decoration: none;
+            font-weight: 600; border: 1px solid var(--control); color: var(--text); background: var(--panel); }
+  .button.primary { background: var(--accent); color: #062006; border-color: var(--accent); }
+  .demo { justify-self: center; background: #000; border: 1px solid var(--control); border-radius: var(--radius);
+          padding: 8px; max-width: 100%; }
+  .demo img { display: block; width: 100%; max-width: 420px; height: auto; }
+  section { padding: 36px 0; border-top: 1px solid var(--panel); }
+  h2 { font-size: 1.6rem; margin: 0 0 18px; }
+  .features { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+  .feature { background: var(--panel); border: 1px solid var(--control); border-radius: var(--radius); padding: 16px 18px; }
+  .feature h3 { margin: 0 0 6px; font-size: 1.02rem; color: var(--accent); }
+  .feature p { margin: 0; color: var(--muted); font-size: .95rem; }
+  .shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
+  figure { margin: 0; }
+  figure img { width: 100%; height: auto; border: 1px solid var(--control); border-radius: var(--radius); background: #000; }
+  figcaption { color: var(--muted); font-size: .9rem; margin-top: 6px; }
+  .install { display: grid; gap: 18px; }
+  .install > div { min-width: 0; }   /* let long commands scroll inside their box */
+  .install h3 { margin: 0 0 8px; font-size: 1.05rem; }
+  pre { margin: 0; background: var(--lcd); border: 1px solid var(--control); border-radius: var(--radius);
+        padding: 14px 16px; overflow-x: auto; color: var(--accent);
+        font: 14px/1.5 "DejaVu Sans Mono", ui-monospace, monospace; }
+  footer { padding: 28px 0 48px; color: var(--muted); font-size: .9rem; border-top: 1px solid var(--panel); }
+  @media (max-width: 760px) {
+    header.hero { grid-template-columns: 1fr; padding-top: 32px; }
+    .demo { justify-self: stretch; }
+    .demo img { max-width: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <div>
+      <div class="brand"><img src="assets/llama-amp.svg" alt=""><span>LLAMA AMP</span></div>
+      <h1>Whip your music collection into shape.</h1>
+      <p class="lede">A Winamp-inspired music player with real Winamp 2 skins, gapless and bit-perfect
+        playback, crossfade, a ten-band equalizer and a live spectrum analyzer. Free and open source.</p>
+      <div class="cta">
+        <a class="button primary" href="#install">Install</a>
+        <a class="button" href="https://github.com/jeremyperson/llama-amp/releases/latest">Latest release</a>
+        <a class="button" href="https://github.com/jeremyperson/llama-amp">Source on GitHub</a>
+      </div>
+    </div>
+    <div class="demo"><img src="assets/demo.gif" width="560" height="740"
+      alt="Llama Amp playing with a live spectrum analyzer, then switching to classic mode with the built-in skin at double size and an oscilloscope"></div>
+  </header>
+
+  <section aria-labelledby="features">
+    <h2 id="features">What it does</h2>
+    <div class="features">
+      <div class="feature"><h3>Real Winamp skins</h3><p>Classic mode draws the main window, equalizer and playlist from any <code>.wsz</code> skin — shaped skins and skin fonts included. Drop a skin on the player to wear it.</p></div>
+      <div class="feature"><h3>Bit-perfect and gapless</h3><p>Direct Mode keeps the signal untouched, ALSA output skips the desktop mixer, and albums play without gaps.</p></div>
+      <div class="feature"><h3>Crossfade</h3><p>Two-player, equal-power crossfades of 2–10 seconds when playing through the desktop mixer.</p></div>
+      <div class="feature"><h3>Equalizer and analyzer</h3><p>Ten bands with presets, ReplayGain, and a spectrum analyzer or oscilloscope — click to switch.</p></div>
+      <div class="feature"><h3>Winamp at your fingertips</h3><p>Z X C V B transport keys, jump to file or time, windowshade, and pixel-perfect double size.</p></div>
+      <div class="feature"><h3>Playlists that behave</h3><p>Sort, shuffle by album, a Play Next queue, undo for every edit, M3U, and a File Info window.</p></div>
+      <div class="feature"><h3>Internet radio</h3><p>SHOUTcast and Icecast streams with live now-playing titles.</p></div>
+      <div class="feature"><h3>Fits your desktop</h3><p>Media keys and panel controls (MPRIS), tray icon, notifications and ListenBrainz scrobbling.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="look">
+    <h2 id="look">Looks</h2>
+    <div class="shots">
+      <figure><img src="assets/modern.png" width="560" height="740" loading="lazy" alt="Llama Green theme"><figcaption>Llama Green</figcaption></figure>
+      <figure><img src="assets/silver.png" width="560" height="740" loading="lazy" alt="Classic Silver theme"><figcaption>Classic Silver</figcaption></figure>
+      <figure><img src="assets/amber.png" width="560" height="740" loading="lazy" alt="Amber theme"><figcaption>Amber</figcaption></figure>
+      <figure><img src="assets/classic.png" width="550" height="928" loading="lazy" alt="Classic mode with the built-in Llama skin"><figcaption>Classic mode, built-in skin</figcaption></figure>
+    </div>
+  </section>
+
+  <section aria-labelledby="install">
+    <h2 id="install">Install</h2>
+    <div class="install">
+      <div>
+        <h3>Debian, Ubuntu, Mint — apt repository (updates arrive with <code>apt upgrade</code>)</h3>
+<pre>curl -fsSL https://jeremyperson.github.io/llama-amp-apt/llama-amp.gpg | sudo tee /usr/share/keyrings/llama-amp.gpg &gt; /dev/null
+echo "deb [signed-by=/usr/share/keyrings/llama-amp.gpg] https://jeremyperson.github.io/llama-amp-apt stable main" | sudo tee /etc/apt/sources.list.d/llama-amp.list
+sudo apt update &amp;&amp; sudo apt install llama-amp</pre>
+      </div>
+      <div>
+        <h3>Or a single .deb</h3>
+        <p>Download it from the <a href="https://github.com/jeremyperson/llama-amp/releases/latest">latest release</a> and open it with your software installer.</p>
+      </div>
+      <div>
+        <h3>Anywhere with GTK 3 and GStreamer — run from source</h3>
+<pre>git clone https://github.com/jeremyperson/llama-amp.git &amp;&amp; cd llama-amp
+python3 musicPlayer.py</pre>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Llama Amp is MIT-licensed and not affiliated with Winamp. Screenshots use demonstration tracks.
+    Classic skin sprite coordinates come from <a href="https://github.com/captbaritone/webamp">Webamp</a> (MIT);
+    find thousands of skins at the <a href="https://skins.webamp.org/">Winamp Skin Museum</a>.
+  </footer>
+</div>
+</body>
+</html>
