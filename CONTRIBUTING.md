@@ -24,9 +24,11 @@ edit, relaunch, done.
   `llamaamp/` package. `MusicPlayer` (`app.py`) is composed of mixins, one per
   concern: `engine` (pipeline, DSP, gapless, transport), `playlist`,
   `metadata`, `config`, `mpris`, `desktop` (tray, notifications), `scrobble`,
-  `updates`, `analyzer`, and `ui/` (window, controls, menus, playlist view,
-  panels, themes). Logic that doesn't need GTK (`order.py`, `AnalyzerState`)
-  stays GTK-free so it can be unit tested directly.
+  `updates`, `analyzer`, `crossfade`, `fileinfo`, `skin/` (Winamp 2 sprite
+  table, `.wsz` loader, built-in skin) and `ui/` (window, controls, menus,
+  playlist view, panels, themes, file info, and `classic/` for the skinned
+  windows). Logic that doesn't need GTK (`order.py`, `AnalyzerState`) stays
+  GTK-free so it can be unit tested directly.
 - **No new runtime dependencies** without prior discussion — the app runs on
   a stock GNOME/GTK3/GStreamer stack on purpose (it's what makes the .deb
   and Flatpak trivially installable).

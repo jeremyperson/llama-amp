@@ -63,12 +63,43 @@ def parse_pledit(text):
     return result
 
 
+def parse_region(text):
+    """region.txt: per window state ([Normal], [WindowShade], [Equalizer],
+    [EqualizerWS]) a list of polygons, each a list of (x, y). NumPoints gives
+    the vertex count of each polygon; PointList the coordinates in order."""
+    regions, section, values = {}, None, {}
+
+    def finish():
+        counts = [int(n) for n in re.findall(r'\d+', values.get('numpoints', ''))]
+        numbers = [int(n) for n in re.findall(r'-?\d+', values.get('pointlist', ''))]
+        points = list(zip(numbers[0::2], numbers[1::2]))
+        if section and counts and sum(counts) <= len(points):
+            polygons, start = [], 0
+            for count in counts:
+                polygons.append(points[start:start + count])
+                start += count
+            regions[section] = [polygon for polygon in polygons if len(polygon) >= 3]
+
+    for line in text.splitlines():
+        line = line.split(';')[0].strip()
+        header = re.fullmatch(r'\[(.+)\]', line)
+        if header:
+            finish()
+            section, values = header.group(1).strip().lower(), {}
+        elif '=' in line:
+            key, value = line.split('=', 1)
+            values[key.strip().lower()] = values.get(key.strip().lower(), '') + ' ' + value
+    finish()
+    return regions
+
+
 class Skin:
     """Sprite sheets as Cairo surfaces plus the text configuration."""
-    def __init__(self, name, sheets, viscolors, pledit):
+    def __init__(self, name, sheets, viscolors, pledit, regions=None):
         self.name = name
         self.viscolors = viscolors
         self.pledit = pledit
+        self.regions = regions or {}
         self._surfaces = {sheet: Gdk.cairo_surface_create_from_pixbuf(pixbuf, 1, None)
                           for sheet, pixbuf in sheets.items()}
         self.sheets = sheets
@@ -92,8 +123,10 @@ class Skin:
         viscolor = by_stem.get('viscolor.txt')
         viscolors = parse_viscolor(viscolor.decode('latin-1'), fallback.viscolors) if viscolor else fallback.viscolors
         pledit = by_stem.get('pledit.txt')
+        region = by_stem.get('region.txt')
         return cls(os.path.splitext(os.path.basename(path.rstrip('/')))[0], sheets, viscolors,
-                   parse_pledit(pledit.decode('latin-1')) if pledit else dict(fallback.pledit))
+                   parse_pledit(pledit.decode('latin-1')) if pledit else dict(fallback.pledit),
+                   parse_region(region.decode('latin-1')) if region else {})
 
     def has(self, sheet):
         return sheet in self._surfaces

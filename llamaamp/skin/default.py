@@ -134,6 +134,8 @@ def _main():
     _bevel(cr, 108, 20, 159, 34, LCD, raised=False)
     _text(cr, 'kbps', 128, 43, TEXT)
     _text(cr, 'khz', 168, 43, TEXT)
+    _fill(cr, ACCENT, 71, 29, 2, 2)          # the clock's colon lives on the background
+    _fill(cr, ACCENT, 71, 35, 2, 2)
     # Separator above the transport row and a small llama in the corner
     _fill(cr, SHADOW, 12, 85, 251, 1)
     _fill(cr, LIGHT, 12, 86, 251, 1)
@@ -181,6 +183,8 @@ def _titlebar():
     for name in ('MAIN_CLUTTER_BAR_BACKGROUND', 'MAIN_CLUTTER_BAR_BACKGROUND_DISABLED'):
         x, y, w, h = _rect('TITLEBAR', name)
         _bevel(cr, x, y, w, h, PANEL)
+        for letter, top in zip('oaidv', (4, 12, 19, 26, 34)):
+            _text(cr, letter, x + 2, y + top, DIM if 'DISABLED' in name else TEXT)
     x, y, w, h = _rect('TITLEBAR', 'MAIN_SHADE_POSITION_BACKGROUND')
     _bevel(cr, x, y, w, h, LCD, raised=False)
     for name in ('MAIN_SHADE_POSITION_THUMB', 'MAIN_SHADE_POSITION_THUMB_LEFT', 'MAIN_SHADE_POSITION_THUMB_RIGHT'):
@@ -331,19 +335,22 @@ def _eqmain():
     _bevel(cr, 0, 0, 275, 116, CHASSIS)
     _bevel(cr, 83, 15, 119, 23, LCD, raised=False)              # graph well
     _text(cr, 'preamp', 12, 105, TEXT)
-    for label, y in (('+12', 36), ('+0', 64), ('-12', 95)):
+    for label, y in (('+12', 36), ('+0', 64), ('-24', 95)):
         _text(cr, label, 46, y, TEXT)
     for index, label in enumerate(EQ_LABELS):
         _text(cr, label, 78 + index * 18 + (14 - len(label) * 5) // 2 + 1, 105, TEXT)
     for name, active in (('EQ_TITLE_BAR', False), ('EQ_TITLE_BAR_SELECTED', True)):
         x, y, w, h = _rect('EQMAIN', name)
         _title_bar(cr, x, y, w, h, 'equalizer', active)
+        # Winamp bakes the equalizer's shade and close buttons into its title bars
+        _small_button(cr, x + 254, y + 3, 'shade', True)
+        _small_button(cr, x + 264, y + 3, 'close', True)
     for frame in range(28):
         fx, fy = 13 + (frame % 14) * 15, 164 + (frame // 14) * 65
         _bevel(cr, fx, fy, 14, 63, LCD, raised=False)
-        level = frame / 27                       # 0 = +12 dB (top) ... 1 = -12 dB
-        top = fy + 2 + round(level * 58)
-        _fill(cr, _gradient(1 - level) if level < .5 else ACCENT, fx + 6, top, 2, fy + 61 - top)
+        level = frame / 27                       # frame 27 is the top of the slider (+12 dB)
+        top = fy + 2 + round((1 - level) * 58)
+        _fill(cr, _gradient(max(0, level - .5) * 2), fx + 6, top, 2, fy + 61 - top)
     for name, face in (('EQ_SLIDER_THUMB', CONTROL), ('EQ_SLIDER_THUMB_SELECTED', LIGHT)):
         x, y, w, h = _rect('EQMAIN', name)
         _bevel(cr, x, y, w, h, face)
@@ -351,7 +358,7 @@ def _eqmain():
     for name, active in (('EQ_CLOSE_BUTTON', True), ('EQ_CLOSE_BUTTON_ACTIVE', False)):
         x, y, w, h = _rect('EQMAIN', name)
         _small_button(cr, x, y, 'close', active)
-    x, y, w, h = _rect('EQMAIN', 'EQ_MAXIMIZE_BUTTON_ACTIVE_FALLBACK')
+    x, y, w, h = _rect('EQMAIN', 'EQ_MAXIMIZE_BUTTON_ACTIVE_FALLBACK')   # pressed shade button
     _small_button(cr, x, y, 'shade', False)
     for base, label in (('EQ_ON_BUTTON', 'on'), ('EQ_AUTO_BUTTON', 'auto')):
         for suffix, raised, lit in (('', True, False), ('_DEPRESSED', False, False),
@@ -409,11 +416,19 @@ def _pledit():
         _title_bar(cr, x, y, w, h, '', active)
         _small_button(cr, x + w - 21, y + 3, 'shade', True)
         _small_button(cr, x + w - 11, y + 3, 'close', True)
+    # Side tiles repeat vertically, so they carry only vertical edges (no seams)
     x, y, w, h = _rect('PLEDIT', 'PLAYLIST_LEFT_TILE')
-    _bevel(cr, x, y, w, h, CHASSIS)
+    _fill(cr, CHASSIS, x, y, w, h)
+    _fill(cr, LIGHT, x, y, 1, h)
+    _fill(cr, SHADOW, x + w - 2, y, 1, h)
+    _fill(cr, LIGHT, x + w - 1, y, 1, h)
     x, y, w, h = _rect('PLEDIT', 'PLAYLIST_RIGHT_TILE')
-    _bevel(cr, x, y, w, h, CHASSIS)
-    _bevel(cr, x + 5, y, 10, h, LCD, raised=False)             # scroll groove
+    _fill(cr, CHASSIS, x, y, w, h)
+    _fill(cr, SHADOW, x, y, 1, h)
+    _fill(cr, SHADOW, x + w - 1, y, 1, h)
+    _fill(cr, LCD, x + 5, y, 10, h)                             # scroll groove
+    _fill(cr, SHADOW, x + 5, y, 1, h)
+    _fill(cr, LIGHT, x + 14, y, 1, h)
     for name, face in (('PLAYLIST_SCROLL_HANDLE', CONTROL), ('PLAYLIST_SCROLL_HANDLE_SELECTED', LIGHT)):
         x, y, w, h = _rect('PLEDIT', name)
         _bevel(cr, x, y, w, h, face)

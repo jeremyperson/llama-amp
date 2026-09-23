@@ -31,6 +31,7 @@ from .order import PlaybackOrder
 from .playlist import PlaylistMixin
 from .scrobble import ScrobbleMixin
 from .tasks import MainLoopTasks
+from .ui.classic import ClassicMixin
 from .ui.controls import ControlsMixin
 from .ui.file_info import FileInfoMixin
 from .ui.menus import MenusMixin
@@ -41,7 +42,7 @@ from .updates import UpdatesMixin
 
 class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisMixin,
                   DesktopMixin, ScrobbleMixin, UpdatesMixin, AnalyzerViewMixin, WindowMixin,
-                  MenusMixin, ControlsMixin, PlaylistViewMixin, FileInfoMixin, Gtk.Window):
+                  MenusMixin, ControlsMixin, PlaylistViewMixin, FileInfoMixin, ClassicMixin, Gtk.Window):
     def __init__(self):
         super().__init__(title=APP_NAME)
         self.tasks = MainLoopTasks()
@@ -110,6 +111,9 @@ class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, Playl
         self._playlist_titles = {}  # path -> tagged title, or None after probing
         self._playlist_tags = {}    # path -> artist/album/disc/track for sorting
         self._file_info_dialog = None
+        self._classic = None            # ClassicMode while a classic skin is active
+        self._default_skin = None
+        self.skin = None
         self._title_rows = {}       # path -> persistent GTK row references
         self._meta_cache = OrderedDict()         # path -> props dict, or False (probe failed)
         self._art_cache = OrderedDict()          # path -> embedded-art GdkPixbuf
@@ -316,6 +320,8 @@ class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, Playl
             except Exception:
                 pass
         self._finish_crossfade()
+        if self._classic is not None:
+            self._classic.destroy()
         try:
             self.player.set_state(Gst.State.NULL)
         except Exception:
@@ -345,5 +351,7 @@ def main():
         app.player.set_state(Gst.State.PLAYING)
         app._sync_play_ui(True)
     app.show_all()
+    if app.config.get('skin') is not None:
+        app.set_skin(app.config['skin'])     # before the modern window maps: no flash
     Gtk.main()
 

@@ -222,6 +222,8 @@ class ConfigMixin:
             "windowshade": self._windowshade,
             "expanded_size": self._expanded_size,
             "panels": self.panels.snapshot() if hasattr(self, 'panels') else self.config['panels'],
+            "classic_windows": (self._classic.snapshot() if getattr(self, '_classic', None)
+                                else self.config['classic_windows']),
         }
 
     def _write_config(self):

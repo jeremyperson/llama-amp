@@ -283,10 +283,17 @@ class PlaylistViewMixin:
         if not selection.path_is_selected(path):
             selection.unselect_all()
             selection.select_path(path)
-        model, paths = selection.get_selected_rows()
-        sel_paths = [model.get_value(model.get_iter(p), 4) for p in paths]
+        self._playlist_menu = self._build_row_menu()  # keep referenced while open
+        self._playlist_menu.popup_at_pointer(event)
+        return True
 
+    def _build_row_menu(self):
+        """Play Now / Play Next / queue / File Info / Remove for the selected rows."""
+        model, paths = self.playlist_view.get_selection().get_selected_rows()
+        sel_paths = [model.get_value(model.get_iter(p), 4) for p in paths]
         menu = Gtk.Menu()
+        if not paths:
+            return menu
         play_item = Gtk.MenuItem(label="Play Now")
         play_item.connect("activate",
                           lambda _w, i=paths[0].get_indices()[0]: self._play_index(i))
@@ -313,11 +320,8 @@ class PlaylistViewMixin:
         rm_item = Gtk.MenuItem(label="Remove")
         rm_item.connect("activate", lambda _w: self.remove_selected(None))
         menu.append(rm_item)
-
         menu.show_all()
-        self._playlist_menu = menu  # keep referenced while open
-        menu.popup_at_pointer(event)
-        return True
+        return menu
 
     def on_playlist_activated(self, treeview, path, column):
         self._play_index(path.get_indices()[0])

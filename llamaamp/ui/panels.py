@@ -248,6 +248,16 @@ class PanelManager:
             item.update(visible=True, collapsed=False, snap_to=None)
             self._show(name)
 
+    def hide_windows(self):
+        """Classic mode: detached panel windows step aside with the main window."""
+        for item in self.items.values():
+            if item['window']:
+                item['window'].hide()
+
+    def show_windows(self):
+        for name in self.items:
+            self._show(name)
+
     def close(self):
         if self.settle_id is not None:
             self.app.tasks.source_remove(self.settle_id)

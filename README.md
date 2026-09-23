@@ -47,6 +47,16 @@ and Balance groups and a larger now-playing title.
   **Bypassed · Direct Mode**. Bypassed sliders are dimmed but remain editable;
   moving them stores settings for later. Direct Mode disables the EQ power button.
 
+## Classic skins
+
+**Settings → Skin** switches to classic mode: Winamp 2's main window, equalizer
+and playlist editor, drawn from real `.wsz` skins — shaped skins, skin fonts,
+visualizer and playlist colors included. Drag a `.wsz` file onto the player to
+install and wear it, or pick **Find skins** to browse the
+[Winamp Skin Museum](https://skins.webamp.org/). The built-in "Llama" classic
+skin is an original design. The windows dock under each other (drag one away
+to float it), double-click a title bar to shade, and Ctrl+D doubles them.
+
 [Classic Silver](screenshots/llama-amp-silver.png) ·
 [Amber](screenshots/llama-amp-amber.png) ·
 [Windowshade](screenshots/llama-amp-windowshade.png)

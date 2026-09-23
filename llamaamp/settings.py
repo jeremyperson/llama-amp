@@ -147,6 +147,8 @@ SCHEMA = {
     'vis_mode': Setting('spectrum', _choice(('spectrum', 'scope'))),
     'double_size': Setting(False, _is_true),
     'crossfade_s': Setting(0, _clamped(int, 0, 10)),
+    'skin': Setting(None, _str_or_none),       # None: modern; 'builtin' or a skins/ entry
+    'classic_windows': Setting({}, _dict),   # classic EQ/playlist visibility
 }
 
 

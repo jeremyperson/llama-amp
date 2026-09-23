@@ -66,6 +66,10 @@ class WindowMixin:
                 text_data = data.get_text()
                 if text_data:
                     uris = text_data.strip().split('\n')
+            skins = self._uris_to_skin_paths(uris)
+            if skins:
+                self.install_skin(skins[0])     # a dropped Winamp skin is worn at once
+                return
             files = self._uris_to_audio_paths(uris)
             if files:
                 self._add_paths(files, feedback=f"Added {len(files)} file(s)")
@@ -234,6 +238,8 @@ class WindowMixin:
                 item['window'].set_geometry_hints(None, self._minimum_geometry(self._px(80)),
                                                   Gdk.WindowHints.MIN_SIZE)
         self.queue_draw()
+        if self._classic is not None:
+            self._classic.rescale()
         self.schedule_save_config()
 
     def _minimum_geometry(self, height):

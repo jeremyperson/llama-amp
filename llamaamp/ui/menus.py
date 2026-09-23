@@ -112,6 +112,7 @@ class MenusMixin:
         """The settings menu: audio fidelity toggles, EQ presets, window actions.
         Served by both the titlebar ⚙ button and the titlebar right-click."""
         menu = Gtk.Menu()
+        self._skin_menu(menu)
         self._appearance_menus(menu)
         menu.append(Gtk.SeparatorMenuItem())
         header = Gtk.MenuItem(label="Audio Output")

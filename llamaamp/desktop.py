@@ -77,10 +77,11 @@ class DesktopMixin:
         self._build_tray_menu().popup(None, None, None, None, button, time)
 
     def _toggle_window_visible(self):
-        if self.get_visible():
-            self.hide()
+        window = self._classic.main if self._classic is not None else self
+        if window.get_visible():
+            window.hide()
         else:
-            self.present()
+            window.present()
 
     def toggle_tray_icon(self, *_args):
         """Live enable/disable of the tray icon (persisted)."""

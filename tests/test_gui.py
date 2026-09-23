@@ -8,6 +8,8 @@ import time
 import unittest
 import wave
 import zipfile
+
+import cairo
 import shutil
 import subprocess
 import threading
@@ -21,7 +23,7 @@ from llamaamp.app import MusicPlayer
 from llamaamp.constants import REPEAT_ALL, REPEAT_ONE, SHUFFLE_TRACKS
 from llamaamp.fileinfo import read_file_info
 from llamaamp.skin.default import build_default_skin
-from llamaamp.skin.loader import Skin, glyph_cell, parse_pledit, parse_viscolor
+from llamaamp.skin.loader import Skin, glyph_cell, parse_pledit, parse_region, parse_viscolor
 from llamaamp.skin.sprites import FONT_LOOKUP
 from llamaamp.ui.themes import THEMES
 from gi.repository import Gdk, GLib, Gst, Gtk
@@ -630,6 +632,108 @@ class PlayerTests(unittest.TestCase):
         a.stop_song(None)
         self.assertEqual(a.playback_state, 'Stopped')
 
+    def click_event(self, x, y, button=1, double=False, state=0):
+        """A Gdk.EventButton as GTK delivers it (the union's button member)."""
+        event = Gdk.EventButton()
+        event.type = Gdk.EventType._2BUTTON_PRESS if double else Gdk.EventType.BUTTON_PRESS
+        event.button, event.x, event.y = button, x, y
+        event.state = Gdk.ModifierType(state)
+        return event
+
+    def test_classic_mode_replaces_and_restores_the_modern_window(self):
+        a = self.app
+        a._add_paths(self.files)
+        a.set_skin('builtin')
+        self.pump(.05)
+        classic = a._classic
+        self.assertFalse(a.get_visible())
+        self.assertTrue(all(window.get_visible() for window in classic.windows()))
+        self.assertTrue(a._analyzer_visible())
+        classic.toggle_window('eq')
+        self.assertFalse(classic.eq.get_visible())
+        a._write_config()
+        saved = json.loads(Path(a.config_path()).read_text())
+        self.assertEqual(saved['skin'], 'builtin')
+        self.assertEqual(saved['classic_windows']['eq'], False)
+        a.set_skin(None)
+        self.pump(.05)
+        self.assertIsNone(a._classic)
+        self.assertTrue(a.get_visible())
+        self.assertIsNone(a.config['skin'])
+
+    def test_classic_controls_drive_the_player(self):
+        a = self.app
+        a._add_paths(self.files)
+        a.set_skin('builtin')
+        main, eq, playlist = a._classic.main, a._classic.eq, a._classic.playlist
+        main.click('play')
+        self.assertEqual(a.playback_state, 'Playing')
+        main.click('pause')
+        self.assertEqual(a.playback_state, 'Paused')
+        main.click('next')
+        self.assertEqual(a.current_index, 1)
+        main.slide('volume', 107 + 7, 60, final=True)          # far left: silent
+        self.assertEqual(a.volume, 0.0)
+        main.slide('balance', 177 + 7 + 24, 60, final=True)    # far right
+        self.assertEqual(a.balance, 1.0)
+        main.click('shuffle')
+        self.assertEqual(a.shuffle, SHUFFLE_TRACKS)
+        eq.slide('band0', 80, 38, final=True)                   # top of the 60 Hz slider
+        self.assertEqual(a.eq_values[0], 1.0)
+        self.assertEqual(a.eq_bars[0].get_value(), 12.0)
+        eq.click('on')
+        self.assertFalse(a.eq_enabled)
+        playlist._press(playlist.area, self.click_event(30, 20 + 2 + 13 * 2 + 3))
+        model, paths = a.playlist_view.get_selection().get_selected_rows()
+        self.assertEqual([p.get_indices()[0] for p in paths], [2])
+        playlist._press(playlist.area, self.click_event(30, 20 + 2 + 3, double=True))
+        self.assertEqual(a.current_index, 0)
+        self.assertTrue(a.is_playing)
+
+    def test_classic_windows_paint_every_state(self):
+        a = self.app
+        a._add_paths(self.files)
+        a.set_skin('builtin')
+        classic = a._classic
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, 600, 600)
+        def paint_all():
+            for window in classic.windows():
+                window.paint(cairo.Context(surface), a.skin)
+        paint_all()                                             # stopped
+        a._play_index(0)
+        a.audio_properties = dict(sample_rate=44100, bitrate=1411, channels=2)
+        self.pump(.2)
+        for mode in ('spectrum', 'scope'):
+            a._set_appearance('vis_mode', mode)
+            self.pump(.1)
+            paint_all()
+        a._toggle_time_mode()
+        paint_all()
+        for window in classic.windows():
+            window.toggle_shade()
+        paint_all()
+        a.toggle_double_size()
+        self.pump(.05)
+        self.assertEqual(classic.main.area.get_size_request(), (550, 28))
+        paint_all()
+
+    def test_dropping_a_wsz_installs_and_switches_to_it(self):
+        a = self.app
+        default = build_default_skin()
+        source = str(Path(self.directory.name, 'Green Dimension.wsz'))
+        bmp = str(Path(self.directory.name, 'main.bmp'))
+        default.sheets['MAIN'].savev(bmp, 'bmp', [], [])
+        with zipfile.ZipFile(source, 'w') as archive:
+            archive.write(bmp, 'main.bmp')
+        class Dropped:
+            def get_uris(self):
+                return [GLib.filename_to_uri(source)]
+        a.on_drag_data_received(a, None, 0, 0, Dropped(), 0, 0)   # dropping the .wsz installs it
+        self.assertEqual(a.config['skin'], 'Green Dimension.wsz')
+        self.assertIn('Green Dimension.wsz', a.installed_skins())
+        self.assertEqual(a.skin.name, 'Green Dimension')
+        self.assertIsNotNone(a._classic)
+
     def test_corrupt_config_values_fall_back_to_defaults(self):
         a = self.app
         a.destroy()
@@ -814,6 +918,15 @@ class SkinTests(unittest.TestCase):
         self.assertEqual(pledit['normalbg'], (0, 0, 0))
         self.assertEqual(pledit['font'], 'Tahoma')
         self.assertEqual(parse_pledit('[broken')['font'], 'Arial')
+
+    def test_region_polygons_parse_from_either_point_style(self):
+        regions = parse_region('[Normal]\n; comment\nNumPoints=4, 3\n'
+                               'PointList=0,0, 275,0, 275,116, 0,116, 1,1 5,1 1,5\n'
+                               '[WindowShade]\nNumPoints=4\nPointList=0,0 275,0 275,14 0,14\n'
+                               '[Equalizer]\nNumPoints=5\nPointList=0,0 1,1\n')
+        self.assertEqual(regions['normal'], [[(0, 0), (275, 0), (275, 116), (0, 116)], [(1, 1), (5, 1), (1, 5)]])
+        self.assertEqual(len(regions['windowshade']), 1)
+        self.assertNotIn('equalizer', regions)          # fewer points than promised: ignored
 
     def test_glyph_fallbacks(self):
         self.assertEqual(glyph_cell('A'), FONT_LOOKUP['a'])

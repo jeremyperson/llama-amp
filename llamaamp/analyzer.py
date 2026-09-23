@@ -141,8 +141,11 @@ class AnalyzerViewMixin:
         return alive
 
     def _analyzer_visible(self):
-        return (not self._destroyed and hasattr(self, 'analyzer') and self.analyzer.get_mapped()
-                and self.config.get('visualization', True) and not self._windowshade
+        if self._destroyed or not self.config.get('visualization', True):
+            return False
+        if getattr(self, '_classic', None) is not None:
+            return self._classic.vis_visible()
+        return (hasattr(self, 'analyzer') and self.analyzer.get_mapped() and not self._windowshade
                 and not getattr(self, '_iconified', False))
 
     def _update_analyzer_visibility(self):

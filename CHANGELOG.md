@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Classic mode with real Winamp 2 skins (Settings → Skin): the main window,
+  equalizer and playlist editor drawn from any `.wsz` skin, including shaped
+  skins (`region.txt`), skin fonts, visualizer colors and playlist colors.
+  Drop a `.wsz` onto the player to install it, or browse the Winamp Skin
+  Museum from the menu. Windows dock magnetically, shade to 14px strips and
+  follow double size. Includes an original built-in "Llama" classic skin.
 - Crossfade (Settings → Crossfade, 2–10 s, off by default): the next track
   starts under the end of the current one with an equal-power fade. It
   uses the sound server's mixer, so it's unavailable with ALSA Output
