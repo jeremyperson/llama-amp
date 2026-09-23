@@ -127,7 +127,7 @@ class PanelManager:
             window.connect('key-press-event', self.app.on_window_key_press)
             window.connect('configure-event', self._configured, name)
             window.connect('button-press-event', self.app._resize_press)
-            window.set_geometry_hints(None, self.app._minimum_geometry(80), Gdk.WindowHints.MIN_SIZE)
+            window.set_geometry_hints(None, self.app._minimum_geometry(self.app._px(80)), Gdk.WindowHints.MIN_SIZE)
             width, height = self.app._clamp_size(item['size'], minimum_height=80)
             window.set_default_size(width, height)
             if self.x11 and self.app._valid_pair(item['position']):

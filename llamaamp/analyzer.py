@@ -165,7 +165,8 @@ class AnalyzerViewMixin:
         width, height = widget.get_allocated_width(), widget.get_allocated_height()
         palette = self.config.get('palette') or self.theme['palette']
         scale = widget.get_scale_factor()
-        key = (width, height, palette, self.theme['lcd'], scale)
+        px = self.ui_scale
+        key = (width, height, palette, self.theme['lcd'], scale, px)
         if getattr(self, '_meter_cache_key', None) != key:
             # Two tiny cached surfaces replace hundreds of Cairo fills per
             # frame. Only level clipping and peak positions change with audio.
@@ -176,7 +177,7 @@ class AnalyzerViewMixin:
                 ctx = cairo.Context(surface)
                 self._cairo_color(ctx, self.theme['lcd'])
                 ctx.paint()
-                for y in range(height - 3, 0, -4):
+                for y in range(height - 3 * px, 0, -4 * px):
                     fraction = (height - y) / height
                     if palette == 'classic':
                         color = '#ed644d' if fraction > .82 else '#eee85b' if fraction > .6 else '#65ed48'
@@ -184,8 +185,8 @@ class AnalyzerViewMixin:
                         color = '#ffba45' if palette == 'amber' else '#52ef34'
                     self._cairo_color(ctx, color, 1 if lit else .08)
                     for index in range(DISPLAY_BANDS):
-                        ctx.rectangle(int(index * width / DISPLAY_BANDS) + 1, y,
-                                      max(1, int(width / DISPLAY_BANDS) - 2), 2)
+                        ctx.rectangle(int(index * width / DISPLAY_BANDS) + px, y,
+                                      max(1, int(width / DISPLAY_BANDS) - 2 * px), 2 * px)
                     ctx.fill()
                 surfaces.append(surface)
             self._meter_cache_key, self._meter_surfaces = key, surfaces
@@ -213,8 +214,8 @@ class AnalyzerViewMixin:
             self._cairo_color(cr, '#fff2d0' if palette == 'amber' else '#e8ffdc')
             for index, peak in enumerate(self.analyzer_state.peaks):
                 if peak > 0:
-                    cr.rectangle(int(index * step) + 1, max(0, int((1 - peak) * (height - 2))),
-                                 max(1, int(step) - 2), 2)
+                    cr.rectangle(int(index * step) + px, max(0, int((1 - peak) * (height - 2 * px))),
+                                 max(1, int(step) - 2 * px), 2 * px)
             cr.fill()
         return False
 
@@ -224,11 +225,11 @@ class AnalyzerViewMixin:
             return
         middle = (height - 1) / 2
         step = width / len(points)
-        cr.set_line_width(2)
+        cr.set_line_width(2 * self.ui_scale)
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
         previous = None
         for index, value in enumerate(points):
-            x, y = index * step + step / 2, middle - value * (middle - 2)
+            x, y = index * step + step / 2, middle - value * (middle - 2 * self.ui_scale)
             if palette == 'classic':
                 # Winamp colors the trace by amplitude: green near center, red at the peaks
                 magnitude = abs(value)

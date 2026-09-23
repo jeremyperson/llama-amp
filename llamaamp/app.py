@@ -86,6 +86,8 @@ class MusicPlayer(EngineMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisM
 
         # Live analyzer levels (drive the EQ bar heights; separate from eq gains)
         self.analyzer_state = AnalyzerState()
+        self._scaled_widgets = []       # (widget, width, height) sized in 1x pixels
+        self._scaled_columns = []
         self.scope_state = ScopeState()
         self._scope_active = False      # read by the streaming-thread probe
         self._scope_last = 0.0
@@ -203,7 +205,8 @@ class MusicPlayer(EngineMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisM
     def on_window_key_press(self, widget, event):
         """Global shortcuts: Space play/pause, Winamp's Z/X/C/V/B transport,
         arrows seek/volume, S shuffle, R repeat, J jump to file, Ctrl+J jump to
-        time, Ctrl+T elapsed/remaining, Ctrl+O add files, Ctrl+L open URL.
+        time, Ctrl+T elapsed/remaining, Ctrl+D double size, Ctrl+O add files,
+        Ctrl+L open URL.
         Delete/Backspace propagate to the playlist."""
         # Typing in an entry (playlist search, dialogs) must never trigger
         # shortcuts — let the widget consume every key.
@@ -231,6 +234,9 @@ class MusicPlayer(EngineMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisM
             return True
         if ctrl and key in (Gdk.KEY_t, Gdk.KEY_T):
             self._toggle_time_mode()
+            return True
+        if ctrl and key in (Gdk.KEY_d, Gdk.KEY_D):
+            self.toggle_double_size()
             return True
         if key == Gdk.KEY_space:
             self.toggle_play_pause(None)

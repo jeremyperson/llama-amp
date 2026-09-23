@@ -118,7 +118,7 @@ class ControlsMixin:
         time_events.connect('button-press-event', self._clock_press)
         middle.pack_start(time_events, False, False, 0)
         self.analyzer = Gtk.DrawingArea()
-        self.analyzer.set_size_request(100, 62)
+        self._scaled_size(self.analyzer, 100, 62)
         self.analyzer.set_hexpand(True)
         self.analyzer.get_accessible().set_name('Visualization: spectrum or oscilloscope')
         self.analyzer.set_tooltip_text('Click to switch: spectrum, oscilloscope, off')
@@ -163,9 +163,9 @@ class ControlsMixin:
     def _panel_button(self, name, action):
         button = Gtk.Button()
         button.get_style_context().add_class('panel-control')
-        button.set_size_request(28, 28)
+        self._scaled_size(button, 28, 28)
         drawing = Gtk.DrawingArea()
-        drawing.set_size_request(16, 16)
+        self._scaled_size(drawing, 16, 16)
         drawing.connect('draw', self._draw_panel_control, name, action)
         button.add(drawing)
         return button
@@ -177,8 +177,9 @@ class ControlsMixin:
         color = '#152019' if self.theme is THEMES['silver'] else self.theme['text']
         self._cairo_color(cr, color)
         cr.set_line_width(1.5)
-        cr.translate((widget.get_allocated_width() - 16) / 2,
-                     (widget.get_allocated_height() - 16) / 2)
+        cr.translate((widget.get_allocated_width() - 16 * self.ui_scale) / 2,
+                     (widget.get_allocated_height() - 16 * self.ui_scale) / 2)
+        cr.scale(self.ui_scale, self.ui_scale)
         if action == 'collapse':
             cr.move_to(3, 8); cr.line_to(13, 8)
             if item['collapsed']:
@@ -200,7 +201,7 @@ class ControlsMixin:
     def _transport_button(self, icon, tooltip, callback):
         button = Gtk.Button()
         drawing = Gtk.DrawingArea()
-        drawing.set_size_request(18, 16)
+        self._scaled_size(drawing, 18, 16)
         drawing.connect('draw', self._draw_transport, icon)
         button.add(drawing)
         button.set_tooltip_text(tooltip)
@@ -211,7 +212,9 @@ class ControlsMixin:
     def _draw_transport(self, widget, cr, icon):
         if icon == 'play' and self.is_playing:
             icon = 'pause'
-        cr.translate(widget.get_allocated_width() / 2 - 8, widget.get_allocated_height() / 2 - 7)
+        cr.translate(widget.get_allocated_width() / 2 - 8 * self.ui_scale,
+                     widget.get_allocated_height() / 2 - 7 * self.ui_scale)
+        cr.scale(self.ui_scale, self.ui_scale)
         color = self.theme['accent'] if icon in ('play', 'pause') else ('#152019' if self.theme is THEMES['silver'] else self.theme['text'])
         self._cairo_color(cr, color)
         if icon == 'pause':
@@ -313,7 +316,7 @@ class ControlsMixin:
             lo, hi = (-PREAMP_DB_RANGE, PREAMP_DB_RANGE) if preamp else (EQ_GAIN_MIN, EQ_GAIN_MAX)
             scale = Gtk.Scale.new_with_range(Gtk.Orientation.VERTICAL, lo, hi, .5)
             scale.set_inverted(True)
-            scale.set_size_request(24, 68)
+            self._scaled_size(scale, 24, 68)
             scale.set_draw_value(False)
             scale.add_mark(0, Gtk.PositionType.LEFT, None)
             scale.get_accessible().set_name('Preamp' if preamp else label + ' Hz equalizer gain')

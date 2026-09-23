@@ -35,7 +35,7 @@ class PlaylistViewMixin:
         # Scrollable playlist
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scrolled.set_size_request(-1, 96)  # Four rows at the minimum window height
+        self._scaled_size(scrolled, -1, 96)  # Four rows at the minimum window height
         
         self.playlist_store = Gtk.ListStore(str, str, int, str, str, str)  # path, display, number, duration
         self.playlist_view = Gtk.TreeView(model=self.playlist_store)
@@ -47,24 +47,25 @@ class PlaylistViewMixin:
         marker = Gtk.CellRendererText()
         marker_col = Gtk.TreeViewColumn('', marker, text=5)
         marker_col.set_cell_data_func(marker, self._zebra_bg)
-        marker_col.set_min_width(42)
+        self._scaled_min_width(marker_col, 42)
         self.playlist_view.append_column(marker_col)
         # Track number column
         track_renderer = Gtk.CellRendererText()
         track_column = Gtk.TreeViewColumn("", track_renderer, text=2)
         track_column.set_cell_data_func(track_renderer, self._zebra_bg)
-        track_column.set_min_width(30)
+        self._scaled_min_width(track_column, 30)
         self.playlist_view.append_column(track_column)
         
         # Song name column
         song_renderer = Gtk.CellRendererText()
         song_renderer.set_property('ellipsize', Pango.EllipsizeMode.END)
-        song_renderer.set_property('height', 24)
+        song_renderer.set_property('height', self._px(24))
+        self._song_renderer = song_renderer
         song_column = Gtk.TreeViewColumn("", song_renderer, text=1)
         song_column.set_cell_data_func(song_renderer, self._zebra_bg)
         song_column.set_expand(True)
         song_column.set_sizing(Gtk.TreeViewColumnSizing.FIXED)
-        song_column.set_min_width(60)
+        self._scaled_min_width(song_column, 60)
         self.playlist_view.append_column(song_column)
 
         # Track duration, right-aligned
@@ -72,7 +73,7 @@ class PlaylistViewMixin:
         dur_renderer.set_property('xalign', 1.0)
         dur_column = Gtk.TreeViewColumn("", dur_renderer, text=3)
         dur_column.set_cell_data_func(dur_renderer, self._zebra_bg)
-        dur_column.set_min_width(64)
+        self._scaled_min_width(dur_column, 64)
         self.playlist_view.append_column(dur_column)
         
         self.playlist_view.set_headers_visible(False)

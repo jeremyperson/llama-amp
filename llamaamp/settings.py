@@ -145,6 +145,7 @@ SCHEMA = {
     'expanded_size': Setting([WINDOW_W, WINDOW_H], _window_size),
     'panels': Setting({}, _dict),
     'vis_mode': Setting('spectrum', _choice(('spectrum', 'scope'))),
+    'double_size': Setting(False, _is_true),
 }
 
 

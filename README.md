@@ -19,6 +19,7 @@ header leave room for seven complete tracks at 560 × 740, with separate Volume
 and Balance groups and a larger now-playing title.
 
 - **Double-click the title bar** (or click ▱) for the narrow windowshade player.
+- **Ctrl+D** toggles Winamp-style double size: everything at 2×, pixel for pixel.
 - **− / +** on each panel collapses/expands it; the adjacent window icon detaches
   it and changes to a docking icon for reattachment. Each has a descriptive tooltip.
   Detached panels snap within 12 pixels on X11. Drag the player to move panels

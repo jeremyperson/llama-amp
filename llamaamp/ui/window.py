@@ -1,5 +1,6 @@
 """Main window: styling, geometry, windowshade, resize grip, layout and drag & drop."""
 import math
+import re
 
 from gi.repository import Gdk, Gtk, Pango
 
@@ -168,6 +169,8 @@ class WindowMixin:
         """
         for token in ('CHASSIS', 'PANEL', 'CONTROL', 'TEXT', 'ACCENT', 'LCD'):
             css = css.replace(token, t[token.lower()])
+        # Double size scales every pixel measure, fonts and borders included
+        css = re.sub(r'(-?\d+(?:\.\d+)?)px', lambda m: f'{float(m.group(1)) * self.ui_scale:g}px', css)
         if t is THEMES['silver']:
             css += '.music-player-main button { color: #10151b; background: linear-gradient(to bottom, #d3d7df, #929aaa); }'
             css += '.music-player-main button:active, .music-player-main button.active { color: #8cfa65; background: #131a15; }'
@@ -182,10 +185,55 @@ class WindowMixin:
             self.analyzer.queue_draw()
             self.playlist_view.queue_draw()
 
-    @staticmethod
-    def _minimum_geometry(height):
+    @property
+    def ui_scale(self):
+        """2 in Winamp-style double size, else 1."""
+        return 2 if self.config.get('double_size') else 1
+
+    def _px(self, pixels):
+        return int(pixels * self.ui_scale)
+
+    def _scaled_size(self, widget, width, height):
+        """set_size_request in 1x pixels, re-applied when double size toggles."""
+        self._scaled_widgets.append((widget, width, height))
+        widget.set_size_request(self._px(width) if width > 0 else width,
+                                self._px(height) if height > 0 else height)
+
+    def _scaled_min_width(self, column, width):
+        self._scaled_columns.append((column, width))
+        column.set_min_width(self._px(width))
+
+    def toggle_double_size(self, *_args):
+        factor = 2 if not self.config.get('double_size') else .5
+        self.config['double_size'] = not self.config.get('double_size')
+        self.setup_styling()
+        for widget, width, height in self._scaled_widgets:
+            widget.set_size_request(self._px(width) if width > 0 else width,
+                                    self._px(height) if height > 0 else height)
+        for column, width in self._scaled_columns:
+            column.set_min_width(self._px(width))
+        self._song_renderer.set_property('height', self._px(24))
+        self._meter_cache_key = None
+        self._update_album_art(self.current_song)
+        if not self._windowshade:
+            self._expanded_size = list(self.get_size())
+        self._expanded_size = [int(n * factor) for n in self._expanded_size]
+        minimum = self._px(48) if self._windowshade else self._px(220)
+        self.set_geometry_hints(None, self._minimum_geometry(minimum), Gdk.WindowHints.MIN_SIZE)
+        if self._windowshade:
+            self.resize(self._clamp_size(self._expanded_size)[0], minimum)
+        else:
+            self.resize(*self._clamp_size(self._expanded_size))
+        for name, item in self.panels.items.items():
+            if not item['attached'] and item.get('window') is not None:
+                item['window'].set_geometry_hints(None, self._minimum_geometry(self._px(80)),
+                                                  Gdk.WindowHints.MIN_SIZE)
+        self.queue_draw()
+        self.schedule_save_config()
+
+    def _minimum_geometry(self, height):
         geometry = Gdk.Geometry()
-        geometry.min_width = 440
+        geometry.min_width = self._px(440)
         geometry.min_height = height
         return geometry
 
@@ -203,10 +251,10 @@ class WindowMixin:
 
     def _clamp_size(self, size, minimum_height=220):
         if not self._valid_pair(size):
-            size = [WINDOW_W, WINDOW_H]
+            size = [self._px(WINDOW_W), self._px(WINDOW_H)]
         area = self._workarea()
-        return (max(440, min(int(size[0]), area.width)),
-                max(minimum_height, min(int(size[1]), area.height)))
+        return (max(self._px(440), min(int(size[0]), area.width)),
+                max(self._px(minimum_height), min(int(size[1]), area.height)))
 
     def _clamp_position(self, position):
         x, y = map(int, position)
@@ -246,9 +294,9 @@ class WindowMixin:
                 widget.hide()
         for name in self.panels.items:
             self.panels._show(name)
-        self.set_geometry_hints(None, self._minimum_geometry(48 if self._windowshade else 220),
+        self.set_geometry_hints(None, self._minimum_geometry(self._px(48 if self._windowshade else 220)),
                                 Gdk.WindowHints.MIN_SIZE)
-        self.resize(self._expanded_size[0], 48 if self._windowshade else self._expanded_size[1])
+        self.resize(self._expanded_size[0], self._px(48) if self._windowshade else self._expanded_size[1])
         self._update_analyzer_visibility()
         self._marquee_stop()
         if not self._windowshade:
@@ -266,7 +314,7 @@ class WindowMixin:
         overlay.add(content)
         window.add(overlay)
         grip = Gtk.DrawingArea()
-        grip.set_size_request(24, 24)
+        self._scaled_size(grip, 24, 24)
         grip.set_halign(Gtk.Align.END)
         grip.set_valign(Gtk.Align.END)
         grip.set_margin_end(2)
@@ -302,7 +350,10 @@ class WindowMixin:
 
     def _draw_resize_grip(self, widget, cr):
         hovered = bool(widget.get_state_flags() & Gtk.StateFlags.PRELIGHT)
-        x, y = widget.get_allocated_width() - 4.5, widget.get_allocated_height() - 4.5
+        scale = self.ui_scale
+        cr.translate(widget.get_allocated_width() - 4.5 * scale, widget.get_allocated_height() - 4.5 * scale)
+        cr.scale(scale, scale)
+        x = y = 0
         # Paired dark/light diagonals give the grip the same bevel as the buttons.
         for offset, color, alpha in ((1, self.theme['lcd'], 1),
                                      (0, self.theme['accent'] if hovered else self.theme['text'],
@@ -329,7 +380,7 @@ class WindowMixin:
         if self._windowshade:
             self.toggle_windowshade()
         self.panels.reset()
-        self._expanded_size = [WINDOW_W, WINDOW_H]
+        self._expanded_size = [self._px(WINDOW_W), self._px(WINDOW_H)]
         self.resize(*self._clamp_size(self._expanded_size))
         if self.panels.x11:
             area = self._workarea()
@@ -352,7 +403,7 @@ class WindowMixin:
         self.panels = PanelManager(self, self.main_box)
         self.panels.add('eq', 'EQUALIZER', self.create_equalizer())
         self.panels.add('playlist', 'PLAYLIST', self.create_playlist(), expand=True)
-        self.set_geometry_hints(None, self._minimum_geometry(220),
+        self.set_geometry_hints(None, self._minimum_geometry(self._px(220)),
                                 Gdk.WindowHints.MIN_SIZE)
         self.time_display.connect('notify::label', lambda *_: self.shade_time.set_text(self.time_display.get_text()))
         self.connect('map-event', self._window_mapped)

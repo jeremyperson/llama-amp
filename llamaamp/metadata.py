@@ -175,7 +175,7 @@ class MetadataMixin:
             return None
 
     def _decode_art_pixbuf(self, data):
-        """Decode image bytes into a pixbuf scaled to fit ALBUM_ART_SIZE."""
+        """Decode image bytes into a pixbuf that fits double-size art."""
         try:
             loader = GdkPixbuf.PixbufLoader()
             try:
@@ -186,7 +186,7 @@ class MetadataMixin:
             if not pixbuf:
                 return None
             w, h = pixbuf.get_width(), pixbuf.get_height()
-            scale = ALBUM_ART_SIZE / max(w, h)
+            scale = ALBUM_ART_SIZE * 2 / max(w, h)
             if scale < 1:
                 pixbuf = pixbuf.scale_simple(max(1, round(w * scale)),
                                              max(1, round(h * scale)),
@@ -214,7 +214,7 @@ class MetadataMixin:
                 if stem.lower() in FOLDER_ART_NAMES and ext.lower() in FOLDER_ART_EXTS:
                     pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
                         os.path.join(directory, entry),
-                        ALBUM_ART_SIZE, ALBUM_ART_SIZE, True)
+                        ALBUM_ART_SIZE * 2, ALBUM_ART_SIZE * 2, True)
                     break
         except Exception as e:
             # Transient failure (unmounted volume, permissions): don't cache,
@@ -269,7 +269,7 @@ class MetadataMixin:
                 continue
             try:
                 pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(
-                    p, ALBUM_ART_SIZE, ALBUM_ART_SIZE, True)
+                    p, ALBUM_ART_SIZE * 2, ALBUM_ART_SIZE * 2, True)
                 dim = pb.copy()
                 pb.saturate_and_pixelate(dim, 0.25, False)  # muted = "placeholder"
                 self._default_art = dim
@@ -285,6 +285,12 @@ class MetadataMixin:
         if pixbuf is None:
             pixbuf = self._get_default_art()
         if pixbuf:
+            # Art is cached at double-size resolution; fit it to the current size
+            fit = ALBUM_ART_SIZE * self.ui_scale / max(pixbuf.get_width(), pixbuf.get_height())
+            if fit < 1:
+                pixbuf = pixbuf.scale_simple(max(1, round(pixbuf.get_width() * fit)),
+                                             max(1, round(pixbuf.get_height() * fit)),
+                                             GdkPixbuf.InterpType.BILINEAR)
             self.album_art.set_from_pixbuf(pixbuf)
             self.album_art.show()
         else:

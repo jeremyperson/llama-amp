@@ -449,6 +449,30 @@ class PlayerTests(unittest.TestCase):
         self.assertTrue(a._jump_to_time('5:00'))        # clamped to the track length
         self.assertFalse(a._jump_to_time('soon'))
 
+    def test_double_size_scales_controls_and_persists(self):
+        a = self.app
+        self.pump(.05)
+        width = a.get_size()[0]
+        self.assertEqual(a.analyzer.get_size_request(), (100, 62))
+        self.assertTrue(self.press(Gdk.KEY_d, Gdk.ModifierType.CONTROL_MASK))
+        self.pump(.1)
+        self.assertEqual(a.ui_scale, 2)
+        self.assertEqual(a.analyzer.get_size_request(), (200, 124))
+        self.assertEqual(a.eq_bars[0].get_size_request(), (48, 136))
+        self.assertEqual(a.playlist_view.get_column(3).get_min_width(), 128)
+        self.assertGreater(a.get_size()[0], width)
+        self.assertEqual(a.album_art.get_pixbuf().get_width(), 144)
+        a.destroy()
+        self.app = a = MusicPlayer()
+        a.show_all()
+        self.pump(.05)
+        self.assertEqual(a.ui_scale, 2)
+        self.assertEqual(a.analyzer.get_size_request(), (200, 124))
+        a.toggle_double_size()
+        self.pump(.05)
+        self.assertEqual(a.analyzer.get_size_request(), (100, 62))
+        self.assertEqual(a.album_art.get_pixbuf().get_width(), 72)
+
     def test_corrupt_config_values_fall_back_to_defaults(self):
         a = self.app
         a.destroy()

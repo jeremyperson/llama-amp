@@ -128,6 +128,8 @@ class ConfigMixin:
             self.log_debug(f"config load failed, using defaults: {e}")
         cfg = load_settings(data)
         self._expanded_size = list(cfg['expanded_size'])
+        if cfg['double_size'] and 'expanded_size' not in data:
+            self._expanded_size = [n * 2 for n in self._expanded_size]
         self._windowshade = False
         self._restore_shade = cfg['windowshade']
         self.config = cfg
