@@ -10,6 +10,7 @@ from ...skin.loader import SKIN_EXTENSIONS, Skin
 from .eq_window import ClassicEqWindow
 from .main_window import ClassicMainWindow
 from .playlist_window import ClassicPlaylistWindow
+from ...i18n import _
 
 REFRESH_MS = 33          # the main window repaints at ~30 fps while playing
 IDLE_EVERY = 8           # ...and every 8th tick otherwise, like the other windows
@@ -159,7 +160,7 @@ class ClassicMixin:
             return Skin.load(os.path.join(self.skins_dir(), skin_id), self._builtin_skin())
         except Exception as error:
             self.log_debug(f"skin {skin_id} failed to load: {error}")
-            self.show_drop_feedback(f"Couldn't load skin {skin_id}")
+            self.show_drop_feedback(_("Couldn't load skin {skin_id}").format(skin_id=skin_id))
             return None
 
     def set_skin(self, skin_id):
@@ -209,11 +210,11 @@ class ClassicMixin:
         self.set_skin(name)
 
     def choose_skin_file(self, *_args):
-        dialog = Gtk.FileChooserDialog(title="Install Winamp Skin", transient_for=self._dialog_parent(),
+        dialog = Gtk.FileChooserDialog(title=_("Install Winamp Skin"), transient_for=self._dialog_parent(),
                                        action=Gtk.FileChooserAction.OPEN)
-        dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, "_Install", Gtk.ResponseType.OK)
+        dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, _("_Install"), Gtk.ResponseType.OK)
         skins = Gtk.FileFilter()
-        skins.set_name("Winamp 2 skins (*.wsz, *.zip)")
+        skins.set_name(_("Winamp 2 skins (*.wsz, *.zip)"))
         for extension in SKIN_EXTENSIONS:
             skins.add_pattern('*' + extension)
             skins.add_pattern('*' + extension.upper())
@@ -234,10 +235,11 @@ class ClassicMixin:
             menu.popup_at_widget(self._classic.main.area, Gdk.Gravity.NORTH_WEST, Gdk.Gravity.NORTH_WEST, None)
 
     def _skin_menu(self, menu):
-        item, sub = Gtk.MenuItem(label='Skin'), Gtk.Menu()
+        item, sub = Gtk.MenuItem(label=_('Skin')), Gtk.Menu()
         current = self.config.get('skin')
-        choices = [(None, 'Modern (Llama Amp)'), ('builtin', 'Classic: Llama')]
-        choices += [(name, 'Classic: ' + os.path.splitext(name)[0]) for name in self.installed_skins()]
+        choices = [(None, _('Modern (Llama Amp)')), ('builtin', _('Classic: Llama'))]
+        choices += [(name, _('Classic: {skin}').format(skin=os.path.splitext(name)[0]))
+                    for name in self.installed_skins()]
         for skin_id, caption in choices:
             choice = Gtk.CheckMenuItem(label=caption)
             choice.set_draw_as_radio(True)
@@ -245,10 +247,10 @@ class ClassicMixin:
             choice.connect('activate', lambda _w, s=skin_id: self.set_skin(s) if self.config.get('skin') != s else None)
             sub.append(choice)
         sub.append(Gtk.SeparatorMenuItem())
-        install = Gtk.MenuItem(label='Install skin…')
+        install = Gtk.MenuItem(label=_('Install skin…'))
         install.connect('activate', self.choose_skin_file)
         sub.append(install)
-        gallery = Gtk.MenuItem(label='Find skins (Winamp Skin Museum)…')
+        gallery = Gtk.MenuItem(label=_('Find skins (Winamp Skin Museum)…'))
         gallery.connect('activate', lambda _w: Gtk.show_uri_on_window(
             self._dialog_parent(), 'https://skins.webamp.org/', Gdk.CURRENT_TIME))
         sub.append(gallery)

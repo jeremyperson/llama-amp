@@ -21,6 +21,10 @@ mkdir -p dist \
 # App
 cp ../musicPlayer.py "$PKG/usr/share/llama-amp/"
 (cd .. && find llamaamp -name '*.py' -exec install -Dm644 {} "packaging/$PKG/usr/share/llama-amp/{}" \;)
+# Translations (po/*.po), compiled beside the app where llamaamp/i18n.py looks
+if ls ../po/*.po >/dev/null 2>&1; then
+  python3 ../tools/translations.py compile "$PKG/usr/share/llama-amp/locale"
+fi
 cp ../llama-amp.svg "$PKG/usr/share/icons/hicolor/scalable/apps/llama-amp.svg"
 
 # Launcher

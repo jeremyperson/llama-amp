@@ -3,6 +3,8 @@ import os
 
 from gi.repository import GLib, Gst, GstPbutils
 
+from .i18n import _
+
 DISCOVER_TIMEOUT = 5 * Gst.SECOND
 
 
@@ -59,19 +61,19 @@ def _image_bytes(tags):
 def read_file_info(path):
     """{'sections': [(title, [(label, value), ...]), ...], 'art': bytes or None}.
     Blocking (runs GstDiscoverer); call it off the main loop."""
-    file_rows = [('Location', path)]
+    file_rows = [(_('Location'), path)]
     if path.startswith(('http://', 'https://')):
-        return {'sections': [('File', file_rows + [('Status', 'Internet stream')])], 'art': None}
+        return {'sections': [(_('File'), file_rows + [(_('Status'), _('Internet stream'))])], 'art': None}
     try:
         size = os.stat(path).st_size
     except OSError:
-        return {'sections': [('File', file_rows + [('Status', 'File not found')])], 'art': None}
-    file_rows.append(('Size', _size(size)))
+        return {'sections': [(_('File'), file_rows + [(_('Status'), _('File not found'))])], 'art': None}
+    file_rows.append((_('Size'), _size(size)))
     try:
         info = GstPbutils.Discoverer.new(DISCOVER_TIMEOUT).discover_uri(
             Gst.filename_to_uri(os.path.abspath(path)))
     except GLib.Error as error:
-        return {'sections': [('File', file_rows + [('Status', f'Unreadable: {error.message}')])], 'art': None}
+        return {'sections': [(_('File'), file_rows + [(_('Status'), _('Unreadable: {error}').format(error=error.message))])], 'art': None}
 
     track, art = [], None
     tags = info.get_tags()
@@ -83,13 +85,13 @@ def read_file_info(path):
             ok, value = tags.get_double(tag)
             return _gain(value) if ok else None
         track = [(label, value) for label, value in (
-            ('Title', text(Gst.TAG_TITLE)), ('Artist', text(Gst.TAG_ARTIST)),
-            ('Album', text(Gst.TAG_ALBUM)), ('Album artist', text(Gst.TAG_ALBUM_ARTIST)),
-            ('Track', _numbered(tags, Gst.TAG_TRACK_NUMBER, Gst.TAG_TRACK_COUNT)),
-            ('Disc', _numbered(tags, Gst.TAG_ALBUM_VOLUME_NUMBER, Gst.TAG_ALBUM_VOLUME_COUNT)),
-            ('Year', _year(tags)), ('Genre', text(Gst.TAG_GENRE)),
-            ('Composer', text(Gst.TAG_COMPOSER)), ('Comment', text(Gst.TAG_COMMENT)),
-            ('Track gain', gain(Gst.TAG_TRACK_GAIN)), ('Album gain', gain(Gst.TAG_ALBUM_GAIN)),
+            (_('Title'), text(Gst.TAG_TITLE)), (_('Artist'), text(Gst.TAG_ARTIST)),
+            (_('Album'), text(Gst.TAG_ALBUM)), (_('Album artist'), text(Gst.TAG_ALBUM_ARTIST)),
+            (_('Track'), _numbered(tags, Gst.TAG_TRACK_NUMBER, Gst.TAG_TRACK_COUNT)),
+            (_('Disc'), _numbered(tags, Gst.TAG_ALBUM_VOLUME_NUMBER, Gst.TAG_ALBUM_VOLUME_COUNT)),
+            (_('Year'), _year(tags)), (_('Genre'), text(Gst.TAG_GENRE)),
+            (_('Composer'), text(Gst.TAG_COMPOSER)), (_('Comment'), text(Gst.TAG_COMMENT)),
+            (_('Track gain'), gain(Gst.TAG_TRACK_GAIN)), (_('Album gain'), gain(Gst.TAG_ALBUM_GAIN)),
         ) if value]
         art = _image_bytes(tags)
 
@@ -102,15 +104,15 @@ def read_file_info(path):
         rate, channels, depth = stream.get_sample_rate(), stream.get_channels(), stream.get_depth()
         bitrate = stream.get_bitrate() or stream.get_max_bitrate()
         audio = [(label, value) for label, value in (
-            ('Format', GstPbutils.pb_utils_get_codec_description(caps) if caps else None),
-            ('Sample rate', f'{rate / 1000:g} kHz' if rate else None),
-            ('Channels', {1: 'Mono', 2: 'Stereo'}.get(channels, f'{channels} channels') if channels else None),
-            ('Bit depth', f'{depth}-bit' if depth else None),
-            ('Bitrate', f'{bitrate // 1000} kbps' if bitrate
-             else f'≈ {round(size * 8 / duration / 1000)} kbps average' if duration else None),
+            (_('Format'), GstPbutils.pb_utils_get_codec_description(caps) if caps else None),
+            (_('Sample rate'), _('{rate} kHz').format(rate=f'{rate / 1000:g}') if rate else None),
+            (_('Channels'), {1: _('Mono'), 2: _('Stereo')}.get(channels, _('{count} channels').format(count=channels)) if channels else None),
+            (_('Bit depth'), _('{depth}-bit').format(depth=depth) if depth else None),
+            (_('Bitrate'), _('{rate} kbps').format(rate=bitrate // 1000) if bitrate
+             else _('≈ {rate} kbps average').format(rate=round(size * 8 / duration / 1000)) if duration else None),
         ) if value]
     if duration:
-        audio.append(('Length', _clock(duration)))
+        audio.append((_('Length'), _clock(duration)))
 
-    sections = [(title, rows) for title, rows in (('Track', track), ('Audio', audio)) if rows]
-    return {'sections': sections + [('File', file_rows)], 'art': art}
+    sections = [(title, rows) for title, rows in ((_('Track'), track), (_('Audio'), audio)) if rows]
+    return {'sections': sections + [(_('File'), file_rows)], 'art': art}

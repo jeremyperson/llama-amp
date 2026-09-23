@@ -1,5 +1,6 @@
 """Collapsible, detachable and snapping EQ/playlist panels."""
 from gi.repository import Gdk, Gtk, Pango
+from ..i18n import _
 
 
 class PanelManager:
@@ -21,18 +22,18 @@ class PanelManager:
         header = Gtk.EventBox()
         header.get_style_context().add_class('panel-header')
         row = Gtk.Box(spacing=4)
-        caption = Gtk.Label(label=title, xalign=0)
+        caption = Gtk.Label(label=_(title), xalign=0)
         caption.get_style_context().add_class('music-player-label')
         caption.set_ellipsize(Pango.EllipsizeMode.END)
         row.pack_start(caption, True, True, 0)
         if name == 'playlist':
             row.pack_start(self.app.playlist_info, False, False, 6)
         collapse = self.app._panel_button(name, 'collapse')
-        collapse.set_tooltip_text('Collapse / expand ' + title.lower())
+        collapse.set_tooltip_text(_('Collapse / expand {panel}').format(panel=_(title).lower()))
         collapse.connect('clicked', lambda *_: self.collapse(name))
         row.pack_start(collapse, False, False, 0)
         detach = self.app._panel_button(name, 'detach')
-        detach.set_tooltip_text('Detach / attach ' + title.lower())
+        detach.set_tooltip_text(_('Detach / attach {panel}').format(panel=_(title).lower()))
         detach.connect('clicked', lambda *_: self.toggle_attach(name))
         row.pack_start(detach, False, False, 0)
         header.add(row)
@@ -78,9 +79,9 @@ class PanelManager:
 
     def _update_controls(self, name):
         item = self.items[name]
-        for key, verb in [('collapse', 'Expand' if item['collapsed'] else 'Collapse'),
-                          ('detach', 'Detach' if item['attached'] else 'Reattach')]:
-            text = f"{verb} {item['title'].lower()}"
+        panel = _(item['title']).lower()
+        for key, text in [('collapse', (_('Expand {panel}') if item['collapsed'] else _('Collapse {panel}')).format(panel=panel)),
+                          ('detach', (_('Detach {panel}') if item['attached'] else _('Reattach {panel}')).format(panel=panel))]:
             item[key].set_tooltip_text(text)
             item[key].get_accessible().set_name(text)
             item[key].queue_draw()
@@ -114,7 +115,7 @@ class PanelManager:
     def _detach(self, name):
         item = self.items[name]
         if item['window'] is None:
-            window = Gtk.Window(title=f"{self.app.get_title()} — {item['title']}")
+            window = Gtk.Window(title=f"{self.app.get_title()} — {_(item['title'])}")
             window.set_decorated(False)
             window.set_transient_for(self.app)
             window.set_destroy_with_parent(True)
@@ -168,7 +169,7 @@ class PanelManager:
                 if item['snap_to'] == root:
                     item['snap_to'] = None
         members = {root}
-        for _ in self.items:
+        for _name in self.items:
             for name, item in self.items.items():
                 if item['snap_to'] in members and name in windows:
                     members.add(name)

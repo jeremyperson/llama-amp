@@ -9,8 +9,15 @@ APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP_VERSION = "1.6"
 # Application name (Winamp-inspired, but an original name — "Winamp" is a trademark)
 APP_NAME = "Llama Amp"
+
+
+def N_(message):
+    """Marks a string for translation where it's defined; _() translates it
+    where it's shown (see llamaamp/i18n.py)."""
+    return message
+
 # Default display text
-DEFAULT_SONG_TEXT = f"{APP_NAME} *** Please select a file ***"
+DEFAULT_SONG_TEXT = N_("{app} *** Please select a file ***")   # use i18n.default_song_text()
 # Update check (GitHub releases)
 UPDATE_API_URL = "https://api.github.com/repos/jeremyperson/llama-amp/releases/latest"
 RELEASES_URL = "https://github.com/jeremyperson/llama-amp/releases"
@@ -43,7 +50,8 @@ META_CACHE_LIMIT = 64                    # LRU caps: probed metadata / embedded 
 FOLDER_ART_CACHE_LIMIT = 32              # per-directory folder art
 SEEK_STEP_SECONDS = 5                    # arrow-key seek step
 VOLUME_STEP = 0.05                       # arrow-key / scroll volume step
-EMPTY_PLAYLIST_HINT = "Drop audio files or folders here\nor use Add ▾"
+EMPTY_PLAYLIST_HINT = N_("Drop audio files or folders here\nor use Add ▾")
+CLASSIC_PLAYLIST_HINT = N_("Drop audio files or folders here\nor use the Add button")
 URI_TARGET_INFO = 80                     # DnD info id for uri-list drops on the playlist
 # Preamp: master gain ahead of the EQ bands (headroom for boosts), Winamp-style
 PREAMP_DB_RANGE = 12.0                   # slider spans ±12 dB, 0.5 = unity
@@ -60,11 +68,11 @@ _MAG_LIST_RE = re.compile(r"magnitude=\(float\)\s*\{([^}]*)\}")
 _MAG_ONE_RE = re.compile(r"magnitude=\(float\)\s*([-\d.eE+]+)")
 # EQ presets in dB per band (60..16K); applied via db_to_eq_value
 EQ_PRESETS = {
-    "Flat":         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    "Rock":         [5, 4, 3, 1, -1, -1, 1, 3, 4, 4],
-    "Pop":          [-1, 2, 4, 4, 2, 0, -1, -1, 1, 2],
-    "Jazz":         [3, 2, 1, 2, -1, -1, 0, 1, 2, 3],
-    "Classical":    [4, 3, 2, 0, -1, -1, 0, 2, 3, 4],
-    "Bass Boost":   [7, 6, 5, 3, 1, 0, 0, 0, 0, 0],
-    "Treble Boost": [0, 0, 0, 0, 0, 2, 4, 6, 7, 7],
+    N_("Flat"):         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    N_("Rock"):         [5, 4, 3, 1, -1, -1, 1, 3, 4, 4],
+    N_("Pop"):          [-1, 2, 4, 4, 2, 0, -1, -1, 1, 2],
+    N_("Jazz"):         [3, 2, 1, 2, -1, -1, 0, 1, 2, 3],
+    N_("Classical"):    [4, 3, 2, 0, -1, -1, 0, 2, 3, 4],
+    N_("Bass Boost"):   [7, 6, 5, 3, 1, 0, 0, 0, 0, 0],
+    N_("Treble Boost"): [0, 0, 0, 0, 0, 2, 4, 6, 7, 7],
 }

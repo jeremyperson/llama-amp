@@ -4,7 +4,6 @@ import os
 from gi.repository import GLib, Gdk, Gst, Gtk, Pango
 
 from ..constants import (
-    DEFAULT_SONG_TEXT,
     EQ_FREQUENCIES,
     EQ_GAIN_MAX,
     EQ_GAIN_MIN,
@@ -21,6 +20,7 @@ from ..constants import (
     VOLUME_STEP,
 )
 from .themes import THEMES
+from ..i18n import _, default_song_text
 
 
 class ControlsMixin:
@@ -31,11 +31,11 @@ class ControlsMixin:
         self.shade_controls.queue_draw()
         context = self.play_btn.get_style_context()
         (context.add_class if playing else context.remove_class)('active')
-        self.play_btn.set_tooltip_text('Pause (Space)' if playing else 'Play (Space)')
+        self.play_btn.set_tooltip_text(_('Pause (Space)') if playing else _('Play (Space)'))
         self._update_queue_markers()
         self._start_decay()
         if getattr(self, '_tray_play_item', None) is not None:
-            self._tray_play_item.set_label('Pause' if playing else 'Play')
+            self._tray_play_item.set_label(_('Pause') if playing else _('Play'))
         self._mpris_notify_playback()
 
     def on_stop_button_press(self, widget, event):
@@ -55,31 +55,31 @@ class ControlsMixin:
     def update_shuffle_button(self):
         ctx = self.shuffle_btn.get_style_context()
         if self.shuffle == SHUFFLE_ALBUMS:
-            self.shuffle_btn.set_label("⇄ ALBUMS")
-            self.shuffle_btn.set_tooltip_text("Shuffle: ALBUMS")
+            self.shuffle_btn.set_label(_("⇄ ALBUMS"))
+            self.shuffle_btn.set_tooltip_text(_("Shuffle: ALBUMS"))
             ctx.add_class('active')
         elif self.shuffle == SHUFFLE_TRACKS:
-            self.shuffle_btn.set_label("⇄ SHUFFLE")
-            self.shuffle_btn.set_tooltip_text("Shuffle: TRACKS")
+            self.shuffle_btn.set_label(_("⇄ SHUFFLE"))
+            self.shuffle_btn.set_tooltip_text(_("Shuffle: TRACKS"))
             ctx.add_class('active')
         else:
-            self.shuffle_btn.set_label("⇄ SHUFFLE")
-            self.shuffle_btn.set_tooltip_text("Shuffle: OFF")
+            self.shuffle_btn.set_label(_("⇄ SHUFFLE"))
+            self.shuffle_btn.set_tooltip_text(_("Shuffle: OFF"))
             ctx.remove_class('active')
 
     def update_repeat_button(self):
         ctx = self.repeat_btn.get_style_context()
         if self.repeat_mode == REPEAT_ALL:
-            self.repeat_btn.set_label("↻ REPEAT")
-            self.repeat_btn.set_tooltip_text("Repeat: ALL")
+            self.repeat_btn.set_label(_("↻ REPEAT"))
+            self.repeat_btn.set_tooltip_text(_("Repeat: ALL"))
             ctx.add_class('active')
         elif self.repeat_mode == REPEAT_ONE:
-            self.repeat_btn.set_label("↻ REPEAT 1")
-            self.repeat_btn.set_tooltip_text("Repeat: ONE")
+            self.repeat_btn.set_label(_("↻ REPEAT 1"))
+            self.repeat_btn.set_tooltip_text(_("Repeat: ONE"))
             ctx.add_class('active')
         else:
-            self.repeat_btn.set_label("↻ REPEAT")
-            self.repeat_btn.set_tooltip_text("Repeat: OFF")
+            self.repeat_btn.set_label(_("↻ REPEAT"))
+            self.repeat_btn.set_tooltip_text(_("Repeat: OFF"))
             ctx.remove_class('active')
 
     def on_display_scroll(self, widget, event):
@@ -98,7 +98,7 @@ class ControlsMixin:
         frame = Gtk.Frame()
         frame.get_style_context().add_class('music-player-display')
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        self.song_label = Gtk.Label(label=DEFAULT_SONG_TEXT, xalign=0)
+        self.song_label = Gtk.Label(label=default_song_text(), xalign=0)
         self.song_label.get_style_context().add_class('song-title')
         self.song_label.set_ellipsize(Pango.EllipsizeMode.END)
         self.song_label.set_width_chars(20)
@@ -114,14 +114,14 @@ class ControlsMixin:
         time_events = Gtk.EventBox()
         time_events.set_visible_window(False)
         time_events.add(self.time_display)
-        time_events.set_tooltip_text('Click: elapsed / remaining')
+        time_events.set_tooltip_text(_('Click: elapsed / remaining'))
         time_events.connect('button-press-event', self._clock_press)
         middle.pack_start(time_events, False, False, 0)
         self.analyzer = Gtk.DrawingArea()
         self._scaled_size(self.analyzer, 100, 62)
         self.analyzer.set_hexpand(True)
-        self.analyzer.get_accessible().set_name('Visualization: spectrum or oscilloscope')
-        self.analyzer.set_tooltip_text('Click to switch: spectrum, oscilloscope, off')
+        self.analyzer.get_accessible().set_name(_('Visualization: spectrum or oscilloscope'))
+        self.analyzer.set_tooltip_text(_('Click to switch: spectrum, oscilloscope, off'))
         self.analyzer.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
         self.analyzer.connect('button-press-event', self._cycle_visualization)
         self.analyzer.connect('draw', self._draw_analyzer)
@@ -136,7 +136,7 @@ class ControlsMixin:
         info_row.pack_start(self.info_label, True, True, 0)
         # Winamp's readouts: inset kbps/kHz digits and mono/stereo lights
         self.kbps_value, self.khz_value = Gtk.Label(label='—'), Gtk.Label(label='—')
-        for value, unit in ((self.kbps_value, 'kbps'), (self.khz_value, 'kHz')):
+        for value, unit in ((self.kbps_value, _('kbps')), (self.khz_value, _('kHz'))):
             value.set_width_chars(4)
             value.set_xalign(1)
             value.get_style_context().add_class('readout-value')
@@ -144,7 +144,7 @@ class ControlsMixin:
             unit_label = Gtk.Label(label=unit)
             unit_label.get_style_context().add_class('readout-unit')
             info_row.pack_start(unit_label, False, False, 0)
-        self.mono_light, self.stereo_light = Gtk.Label(label='mono'), Gtk.Label(label='stereo')
+        self.mono_light, self.stereo_light = Gtk.Label(label=_('mono')), Gtk.Label(label=_('stereo'))
         for light in (self.mono_light, self.stereo_light):
             light.get_style_context().add_class('channel-light')
             info_row.pack_start(light, False, False, 0)
@@ -156,23 +156,23 @@ class ControlsMixin:
     def create_controls(self):
         box = Gtk.Box(spacing=2)
         for attr, icon, tip, callback in [
-                ('prev_btn', 'previous', 'Previous', self.previous_song),
-                ('play_btn', 'play', 'Play / Pause (Space)', self.toggle_play_pause),
-                ('stop_btn', 'stop', 'Stop (right-click: stop after track)', self.stop_song),
-                ('next_btn', 'next', 'Next', self.next_song),
-                ('eject_btn', 'eject', 'Add files (Ctrl+O)', self.add_files)]:
+                ('prev_btn', 'previous', _('Previous'), self.previous_song),
+                ('play_btn', 'play', _('Play / Pause (Space)'), self.toggle_play_pause),
+                ('stop_btn', 'stop', _('Stop (right-click: stop after track)'), self.stop_song),
+                ('next_btn', 'next', _('Next'), self.next_song),
+                ('eject_btn', 'eject', _('Add files (Ctrl+O)'), self.add_files)]:
             button = self._transport_button(icon, tip, callback)
             setattr(self, attr, button)
             box.pack_start(button, False, False, 0)
         self.stop_btn.connect('button-press-event', self.on_stop_button_press)
         box.pack_start(Gtk.Label(), True, True, 0)
-        self.shuffle_btn = Gtk.Button(label='SHUFFLE')
+        self.shuffle_btn = Gtk.Button(label=_('SHUFFLE'))
         self.shuffle_btn.connect('clicked', self.toggle_shuffle)
-        self.shuffle_btn.set_tooltip_text('Shuffle: off / tracks / albums (S)')
+        self.shuffle_btn.set_tooltip_text(_('Shuffle: off / tracks / albums (S)'))
         box.pack_start(self.shuffle_btn, False, False, 1)
-        self.repeat_btn = Gtk.Button(label='REPEAT')
+        self.repeat_btn = Gtk.Button(label=_('REPEAT'))
         self.repeat_btn.connect('clicked', self.toggle_repeat)
-        self.repeat_btn.set_tooltip_text('Repeat: off / all / one (R)')
+        self.repeat_btn.set_tooltip_text(_('Repeat: off / all / one (R)'))
         box.pack_start(self.repeat_btn, False, False, 1)
         return box
 
@@ -261,7 +261,7 @@ class ControlsMixin:
         self.position_scale.set_range(0, 100)
         self.position_scale.set_value(0)
         self.position_scale.set_draw_value(False)
-        self.position_scale.set_tooltip_text("Song Position")
+        self.position_scale.set_tooltip_text(_("Song Position"))
         self.position_scale.connect("button-press-event", self.on_position_pressed)
         self.position_scale.connect("button-release-event", self.on_position_released)
         # Swallow scroll: GTK's default scroll-to-change-value moves the slider
@@ -275,8 +275,8 @@ class ControlsMixin:
         container.set_column_spacing(0)
         self.level_controls = container
         for column, width, label, attr, limits, callback, formatter in (
-                (0, 3, 'VOLUME', 'volume_scale', (0, 1), self.on_volume_changed, self.format_volume_value),
-                (3, 2, 'BALANCE', 'balance_scale', (-1, 1), self.on_balance_changed, self.format_balance_value)):
+                (0, 3, _('VOLUME'), 'volume_scale', (0, 1), self.on_volume_changed, self.format_volume_value),
+                (3, 2, _('BALANCE'), 'balance_scale', (-1, 1), self.on_balance_changed, self.format_balance_value)):
             group = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
             group.set_hexpand(True)
             group.set_margin_start(6 if column else 0)
@@ -293,7 +293,7 @@ class ControlsMixin:
             scale.set_can_focus(True)
             scale.set_draw_value(False)
             scale.get_accessible().set_name(label.title())
-            scale.set_tooltip_text('Volume' if column == 0 else 'Balance · double-click to center')
+            scale.set_tooltip_text(_('Volume') if column == 0 else _('Balance · double-click to center'))
             setattr(self, attr, scale)
             scale.connect('value-changed', callback)
             scale.connect('value-changed', lambda widget, r=readout, f=formatter:
@@ -308,14 +308,14 @@ class ControlsMixin:
     def create_equalizer(self):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         controls = Gtk.Box(spacing=4)
-        self.eq_on_btn = Gtk.Button(label='ON')
+        self.eq_on_btn = Gtk.Button(label=_('ON'))
         self.eq_on_btn.connect('clicked', self.toggle_eq_enabled)
         controls.pack_start(self.eq_on_btn, False, False, 0)
-        self.preset_button = Gtk.Button(label='Presets ▾')
+        self.preset_button = Gtk.Button(label=_('Presets ▾'))
         self.preset_button.connect('clicked', self._preset_popup)
         controls.pack_start(self.preset_button, False, False, 0)
-        reset = Gtk.Button(label='Reset')
-        reset.set_tooltip_text('Reset all EQ bands and preamp to 0 dB')
+        reset = Gtk.Button(label=_('Reset'))
+        reset.set_tooltip_text(_('Reset all EQ bands and preamp to 0 dB'))
         reset.connect('clicked', self._reset_eq)
         controls.pack_start(reset, False, False, 0)
         self.eq_status = Gtk.Label(xalign=1)
@@ -326,7 +326,7 @@ class ControlsMixin:
         bands = Gtk.Box(spacing=1, homogeneous=True)
         self.eq_bars = []
         self._syncing_eq = True
-        for index, label in enumerate(['PRE'] + EQ_FREQUENCIES):
+        for index, label in enumerate([_('PRE')] + EQ_FREQUENCIES):
             column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
             preamp = index == 0
             lo, hi = (-PREAMP_DB_RANGE, PREAMP_DB_RANGE) if preamp else (EQ_GAIN_MIN, EQ_GAIN_MAX)
@@ -335,7 +335,7 @@ class ControlsMixin:
             self._scaled_size(scale, 24, 68)
             scale.set_draw_value(False)
             scale.add_mark(0, Gtk.PositionType.LEFT, None)
-            scale.get_accessible().set_name('Preamp' if preamp else label + ' Hz equalizer gain')
+            scale.get_accessible().set_name(_('Preamp') if preamp else _('{band} Hz equalizer gain').format(band=label))
             scale.connect('value-changed', self._eq_scale_changed, index - 1)
             scale.connect('button-press-event', self._eq_scale_press)
             column.pack_start(scale, True, True, 0)
@@ -388,22 +388,23 @@ class ControlsMixin:
             for scale, gain in zip(scales, gains):
                 scale.set_value(gain)
                 scale._gain_label.set_text(f'{gain:+g}')
-                tip = f'{gain:+g} dB · double-click to reset · arrows adjust'
+                tip = _('{gain} dB · double-click to reset · arrows adjust').format(gain=f'{gain:+g}')
                 if self.direct_mode:
-                    tip += ' · stored for later; Direct Mode bypasses EQ'
+                    tip += ' · ' + _('stored for later; Direct Mode bypasses EQ')
                 elif not self.eq_enabled:
-                    tip += ' · stored for later; equalizer is off'
+                    tip += ' · ' + _('stored for later; equalizer is off')
                 scale.set_tooltip_text(tip)
                 context = scale.get_style_context()
                 (context.add_class if self.direct_mode or not self.eq_enabled else context.remove_class)('eq-bypassed')
-            self.eq_on_btn.set_label('Bypassed' if self.direct_mode else 'ON' if self.eq_enabled else 'OFF')
+            self.eq_on_btn.set_label(_('Bypassed') if self.direct_mode else _('ON') if self.eq_enabled else _('OFF'))
             self.eq_on_btn.set_sensitive(not self.direct_mode)
-            self.eq_on_btn.set_tooltip_text('Direct Mode bypasses EQ; disable it in Audio Output to use the equalizer'
-                                            if self.direct_mode else 'Enable / disable the equalizer')
+            self.eq_on_btn.set_tooltip_text(_('Direct Mode bypasses EQ; disable it in Audio Output to use the equalizer')
+                                            if self.direct_mode else _('Enable / disable the equalizer'))
             context = self.eq_on_btn.get_style_context()
             (context.add_class if self.eq_enabled and not self.direct_mode else context.remove_class)('active')
-            self.eq_status.set_text('Bypassed · Direct Mode' if self.direct_mode
-                                    else 'Equalizer off' if not self.eq_enabled else self._current_preset_name() or 'Custom')
+            preset = self._current_preset_name()
+            self.eq_status.set_text(_('Bypassed · Direct Mode') if self.direct_mode
+                                    else _('Equalizer off') if not self.eq_enabled else _(preset) if preset else _('Custom'))
         finally:
             self._syncing_eq = False
 
@@ -442,14 +443,14 @@ class ControlsMixin:
         """Radio-style preset entries; the active curve is checked."""
         current = self._current_preset_name()
         for name in EQ_PRESETS:
-            label = "Flat (reset)" if name == "Flat" else name
+            label = _("Flat (reset)") if name == "Flat" else _(name)
             item = Gtk.CheckMenuItem(label=label)
             item.set_draw_as_radio(True)
             item.set_active(name == current)
             item.connect("activate", lambda _w, n=name: self.apply_eq_preset(n))
             menu.append(item)
         if current is None:
-            custom = Gtk.CheckMenuItem(label="Custom")
+            custom = Gtk.CheckMenuItem(label=_("Custom"))
             custom.set_draw_as_radio(True)
             custom.set_active(True)
             custom.set_sensitive(False)
@@ -458,7 +459,7 @@ class ControlsMixin:
     def show_eq_preset_menu(self, event):
         """Right-click menu on the EQ bars: apply a preset."""
         menu = Gtk.Menu()
-        header = Gtk.MenuItem(label="EQ Presets")
+        header = Gtk.MenuItem(label=_("EQ Presets"))
         header.set_sensitive(False)
         menu.append(header)
         menu.append(Gtk.SeparatorMenuItem())
@@ -508,7 +509,7 @@ class ControlsMixin:
     def _refresh_song_label(self):
         """Set the song label from cached tag metadata, else the filename stem."""
         if not self.current_song:
-            self._set_title_text(DEFAULT_SONG_TEXT)
+            self._set_title_text(default_song_text())
             return
         cached = self._cache_get(self._meta_cache, self.current_song)
         if isinstance(cached, dict) and cached.get('title'):
@@ -668,13 +669,13 @@ class ControlsMixin:
         # Format and shuffle/repeat status; the lights cover mono and stereo only
         status_parts = [file_type if channels in (0, 1, 2) else f"{file_type} · {channels} ch"]
         if self.shuffle == SHUFFLE_ALBUMS:
-            status_parts.append("ALBUMS")
+            status_parts.append(_("ALBUMS"))
         elif self.shuffle == SHUFFLE_TRACKS:
-            status_parts.append("SHUFFLE")
+            status_parts.append(_("SHUFFLE"))
         if self.repeat_mode == REPEAT_ALL:
-            status_parts.append("REPEAT")
+            status_parts.append(_("REPEAT"))
         elif self.repeat_mode == REPEAT_ONE:
-            status_parts.append("REPEAT 1")
+            status_parts.append(_("REPEAT 1"))
 
         self.info_label.set_text(" • ".join(status_parts))
 

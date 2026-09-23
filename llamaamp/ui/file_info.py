@@ -2,9 +2,10 @@
 import os
 import threading
 
-from gi.repository import Gtk, Pango
+from gi.repository import GLib, Gtk, Pango
 
 from ..fileinfo import read_file_info
+from ..i18n import _
 
 
 class FileInfoMixin:
@@ -16,14 +17,14 @@ class FileInfoMixin:
     def show_file_info(self, *_args, path=None):
         path = path or self._file_info_target()
         if not path:
-            self.show_drop_feedback("Select a track for File Info")
+            self.show_drop_feedback(_("Select a track for File Info"))
             return
         if self._file_info_dialog is not None:
             self._file_info_dialog.destroy()
         name = path if self._is_stream_url(path) else os.path.basename(path)
-        dialog = Gtk.Dialog(title=f"File Info — {name}", transient_for=self)
+        dialog = Gtk.Dialog(title=_('File Info — {name}').format(name=name), transient_for=self)
         dialog.set_destroy_with_parent(True)
-        dialog.add_button("_Close", Gtk.ResponseType.CLOSE)
+        dialog.add_button(_("_Close"), Gtk.ResponseType.CLOSE)
         dialog.set_default_size(440, -1)
         dialog.fields = {}
         box = dialog.get_content_area()
@@ -39,7 +40,7 @@ class FileInfoMixin:
         header.pack_start(title, True, True, 0)
         box.pack_start(header, False, False, 0)
         dialog.grid = Gtk.Grid(column_spacing=12, row_spacing=3)
-        dialog.grid.attach(Gtk.Label(label="Reading…", xalign=0), 0, 0, 2, 1)
+        dialog.grid.attach(Gtk.Label(label=_("Reading…"), xalign=0), 0, 0, 2, 1)
         box.pack_start(dialog.grid, False, False, 0)
         self._set_file_info_art(dialog, path, None)
         dialog.connect('response', lambda d, _response: d.destroy())
@@ -68,7 +69,7 @@ class FileInfoMixin:
         row = 0
         for section, rows in info['sections']:
             heading = Gtk.Label(xalign=0)
-            heading.set_markup(f"<b>{section}</b>")
+            heading.set_markup(f"<b>{GLib.markup_escape_text(section)}</b>")
             heading.set_margin_top(6 if row else 0)
             dialog.grid.attach(heading, 0, row, 2, 1)
             row += 1

@@ -13,6 +13,7 @@ from .constants import (
     FOLDER_ART_NAMES,
     META_CACHE_LIMIT,
 )
+from .i18n import _
 
 
 class MetadataWorker:
@@ -129,7 +130,7 @@ class MetadataMixin:
         self._playlist_titles[file_path] = title.strip() if isinstance(title, str) and title.strip() else None
         display = self._display_name(file_path)
         if not self._playable(file_path):
-            display += ' [MISSING]'
+            display = _("{name} [MISSING]").format(name=display)
         changed = False
         for reference in references:
             path = reference.get_path()

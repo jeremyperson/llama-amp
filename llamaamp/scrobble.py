@@ -7,6 +7,7 @@ import urllib.request
 from gi.repository import Gst, Gtk
 
 from .constants import LISTENBRAINZ_API
+from .i18n import _
 
 
 class ScrobbleMixin:
@@ -78,20 +79,20 @@ class ScrobbleMixin:
         threading.Thread(target=worker, daemon=True).start()
 
     def show_scrobble_dialog(self, *_args):
-        dialog = Gtk.Dialog(title="Scrobbling", transient_for=self, modal=True)
+        dialog = Gtk.Dialog(title=_("Scrobbling"), transient_for=self, modal=True)
         dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
                            Gtk.STOCK_OK, Gtk.ResponseType.OK)
         box = dialog.get_content_area()
         box.set_margin_top(10); box.set_margin_bottom(10)
         box.set_margin_start(10); box.set_margin_end(10)
         box.set_spacing(6)
-        box.add(Gtk.Label(label="ListenBrainz user token\n(listenbrainz.org → Settings)"))
+        box.add(Gtk.Label(label=_("ListenBrainz user token\n(listenbrainz.org → Settings)")))
         entry = Gtk.Entry()
         entry.set_visibility(False)
         entry.set_width_chars(40)
         entry.set_text(self.config.get('listenbrainz_token') or "")
         box.add(entry)
-        check = Gtk.CheckButton(label="Enable scrobbling")
+        check = Gtk.CheckButton(label=_("Enable scrobbling"))
         check.set_active(self.config.get('scrobble_enabled') is True)
         box.add(check)
         dialog.show_all()
@@ -105,6 +106,6 @@ class ScrobbleMixin:
         self.config['scrobble_enabled'] = bool(enabled and token)
         self.schedule_save_config()
         self.show_drop_feedback(
-            "Scrobbling enabled" if self.config['scrobble_enabled']
-            else "Scrobbling off")
+            _("Scrobbling enabled") if self.config['scrobble_enabled']
+            else _("Scrobbling off"))
 

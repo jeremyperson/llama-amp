@@ -10,12 +10,21 @@ from contextlib import contextmanager
 
 from gi.repository import GLib, Gtk
 
-from .constants import DEFAULT_SONG_TEXT
+from .i18n import N_, _, default_song_text, ngettext
 
-# Winamp's Sort menu plus artist/album/length; captions for the Playlist menu
-SORT_KEYS = {'title': 'By title', 'artist': 'By artist', 'album': 'By album',
-             'filename': 'By filename', 'path': 'By path and filename',
-             'length': 'By length', 'reverse': 'Reverse list', 'randomize': 'Randomize list'}
+# Winamp's Sort menu plus artist/album/length; captions (translate with _()
+# where shown) for the Playlist menu
+SORT_KEYS = {'title': N_('By title'), 'artist': N_('By artist'), 'album': N_('By album'),
+             'filename': N_('By filename'), 'path': N_('By path and filename'),
+             'length': N_('By length'), 'reverse': N_('Reverse list'), 'randomize': N_('Randomize list')}
+
+
+def missing_label(name):
+    return _("❌ {name} [MISSING]").format(name=name)
+
+
+def added_feedback(count):
+    return ngettext("Added {count} file", "Added {count} files", count).format(count=count)
 
 
 def _natural(text):
@@ -121,7 +130,7 @@ class PlaylistMixin:
                 self.entry_ids.append(uuid.uuid4().hex)
                 name = self._display_name(p)
                 display = (name if self._is_stream_url(p) or os.path.exists(p)
-                           else f"❌ {name} [MISSING]")
+                           else missing_label(name))
                 self.playlist_store.append([p, display, len(self.playlist), self._duration_str(p), self.entry_ids[-1], ""])
                 added += 1
         if not added:
@@ -195,7 +204,7 @@ class PlaylistMixin:
                 for i, (key, path) in enumerate(zip(self.entry_ids, self.playlist)):
                     name = self._display_name(path)
                     if not self._playable(path):
-                        name += ' [MISSING]'
+                        name = _("{name} [MISSING]").format(name=name)
                     self.playlist_store.append([path, name, i + 1, self._duration_str(path), key, ''])
         if current in self.entry_ids:
             self.current_index = self.entry_ids.index(current)
@@ -204,7 +213,7 @@ class PlaylistMixin:
             self.current_song = None
             self.order.current = None
             self.current_index = 0
-            self._set_title_text(DEFAULT_SONG_TEXT)
+            self._set_title_text(default_song_text())
             self.info_label.set_text('')
             self._set_album_art(None)
         self._renumber_rows()
@@ -217,7 +226,7 @@ class PlaylistMixin:
 
     def undo_playlist(self, *_args):
         if not self._undo:
-            self.show_drop_feedback('Nothing to undo')
+            self.show_drop_feedback(_('Nothing to undo'))
             return
         self._undoing = True
         try:
@@ -229,14 +238,14 @@ class PlaylistMixin:
             self._playlist_edited()
         finally:
             self._undoing = False
-        self.show_drop_feedback('Playlist edit undone')
+        self.show_drop_feedback(_('Playlist edit undone'))
 
     def update_missing_file_in_playlist(self, index):
         """Update the playlist display to show a file as missing"""
         if 0 <= index < len(self.playlist):
             file_path = self.playlist[index]
             song_name = self._display_name(file_path)
-            missing_display = f"❌ {song_name} [MISSING]"
+            missing_display = missing_label(song_name)
             
             # Update the playlist store display
             tree_iter = self.playlist_store.get_iter(Gtk.TreePath(index))
@@ -271,7 +280,7 @@ class PlaylistMixin:
 
     def add_files(self, button):
         dialog = Gtk.FileChooserDialog(
-            title="Add Music Files",
+            title=_("Add Music Files"),
             parent=self,
             action=Gtk.FileChooserAction.OPEN
         )
@@ -283,13 +292,13 @@ class PlaylistMixin:
 
         # Audio file filter
         filter_audio = Gtk.FileFilter()
-        filter_audio.set_name("Audio files")
+        filter_audio.set_name(_("Audio files"))
         filter_audio.add_mime_type("audio/*")
         dialog.add_filter(filter_audio)
 
         # Playlist import filter
         filter_m3u = Gtk.FileFilter()
-        filter_m3u.set_name("Playlists (*.m3u, *.m3u8)")
+        filter_m3u.set_name(_("Playlists (*.m3u, *.m3u8)"))
         filter_m3u.add_pattern("*.m3u")
         filter_m3u.add_pattern("*.m3u8")
         dialog.add_filter(filter_m3u)
@@ -309,7 +318,7 @@ class PlaylistMixin:
         """Add every audio file under a chosen folder (recursive). The walk runs
         off-thread so a huge or slow tree can't freeze the UI."""
         dialog = Gtk.FileChooserDialog(
-            title="Add Music Folder",
+            title=_("Add Music Folder"),
             parent=self,
             action=Gtk.FileChooserAction.SELECT_FOLDER
         )
@@ -337,29 +346,30 @@ class PlaylistMixin:
 
     def _folder_walk_done(self, folder, found):
         if found:
-            self._add_paths(found, feedback=f"Added {len(found)} file(s)")
+            self._add_paths(found, feedback=added_feedback(len(found)))
         else:
-            self.show_drop_feedback(f"No audio files in {os.path.basename(folder)}")
+            self.show_drop_feedback(_('No audio files in {folder}').format(folder=os.path.basename(folder)))
         return False
 
     def remove_missing(self, button):
         keep = [(key, path) for key, path in zip(self.entry_ids, self.playlist) if self._playable(path)]
         removed = len(self.playlist) - len(keep)
         if not removed:
-            self.show_drop_feedback('No missing files')
+            self.show_drop_feedback(_('No missing files'))
             return
         self._remember_playlist()
         self.entry_ids = [key for key, _ in keep]
         self.playlist = [path for _, path in keep]
         self._playlist_edited()
-        self.show_drop_feedback(f'Removed {removed} missing file(s) — Ctrl+Z to undo')
+        self.show_drop_feedback(ngettext('Removed {count} missing file — Ctrl+Z to undo',
+                                          'Removed {count} missing files — Ctrl+Z to undo', removed).format(count=removed))
 
     def export_m3u(self, button):
         """Export the playlist as an extended M3U file."""
         if not self.playlist:
             return
         dialog = Gtk.FileChooserDialog(
-            title="Export Playlist",
+            title=_("Export Playlist"),
             parent=self,
             action=Gtk.FileChooserAction.SAVE
         )
@@ -376,10 +386,10 @@ class PlaylistMixin:
             return
         try:
             self._write_m3u(target)
-            self.show_drop_feedback(f"Exported {len(self.playlist)} track(s)")
+            self.show_drop_feedback(ngettext('Exported {count} track', 'Exported {count} tracks', len(self.playlist)).format(count=len(self.playlist)))
         except Exception as e:
             self.log_debug(f"m3u export failed: {e}")
-            self.show_drop_feedback("Export failed")
+            self.show_drop_feedback(_("Export failed"))
 
     def _write_m3u(self, target):
         lines = ["#EXTM3U"]
@@ -408,11 +418,11 @@ class PlaylistMixin:
         self._write_m3u(os.path.join(self.playlists_dir(), f"{name}.m3u"))
         self._playlist_name = name
         self.schedule_save_config()
-        self.show_drop_feedback(f"Saved playlist '{name}'")
+        self.show_drop_feedback(_("Saved playlist '{name}'").format(name=name))
         return True
 
     def _save_playlist_as(self, *_args):
-        dialog = Gtk.Dialog(title="Save Playlist As", transient_for=self, modal=True)
+        dialog = Gtk.Dialog(title=_("Save Playlist As"), transient_for=self, modal=True)
         dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
                            Gtk.STOCK_SAVE, Gtk.ResponseType.OK)
         entry = Gtk.Entry()
@@ -422,7 +432,7 @@ class PlaylistMixin:
         box = dialog.get_content_area()
         box.set_margin_top(10); box.set_margin_bottom(10)
         box.set_margin_start(10); box.set_margin_end(10)
-        box.add(Gtk.Label(label="Playlist name:"))
+        box.add(Gtk.Label(label=_("Playlist name:")))
         box.add(entry)
         dialog.show_all()
         response = dialog.run()
@@ -438,7 +448,7 @@ class PlaylistMixin:
     def _load_named_playlist(self, name):
         entries = self._parse_m3u(os.path.join(self.playlists_dir(), f'{name}.m3u'))
         if not entries:
-            self.show_drop_feedback(f"Playlist '{name}' is empty/unreadable")
+            self.show_drop_feedback(_("Playlist '{name}' is empty/unreadable").format(name=name))
             return
         self._remember_playlist()
         self.playlist = entries
@@ -456,7 +466,7 @@ class PlaylistMixin:
             del self.playlist[index]
             del self.entry_ids[index]
         self._playlist_edited()
-        self.show_drop_feedback('Removed from playlist — Ctrl+Z to undo')
+        self.show_drop_feedback(_('Removed from playlist — Ctrl+Z to undo'))
 
     def clear_playlist(self, button):
         if not self.playlist:
@@ -466,13 +476,13 @@ class PlaylistMixin:
         self.entry_ids.clear()
         self.order.queue.clear()
         self._playlist_edited()
-        self.show_drop_feedback('Playlist cleared — Ctrl+Z to undo')
+        self.show_drop_feedback(_('Playlist cleared — Ctrl+Z to undo'))
 
     def update_playlist_info(self):
         count = len(self.playlist)
         if hasattr(self, 'playlist_hint'):
             self.playlist_hint.set_visible(count == 0)
-        base = "1 track" if count == 1 else f"{count} tracks"
+        base = ngettext("{count} track", "{count} tracks", count).format(count=count)
         known = [self._duration_seconds(p) for p in self.playlist]
         known = [s for s in known if s]
         if count > 0 and len(known) >= max(1, int(count * 0.9)):
@@ -511,7 +521,7 @@ class PlaylistMixin:
             if key in self.entry_ids and key not in self.order.queue:
                 self.order.queue.append(key)
         self._refresh_order()
-        self.show_drop_feedback(f'Queued {len(entry_ids)} track(s)')
+        self.show_drop_feedback(ngettext('Queued {count} track', 'Queued {count} tracks', len(entry_ids)).format(count=len(entry_ids)))
 
     def _unqueue_paths(self, entry_ids):
         self.order.queue = deque(key for key in self.order.queue if key not in entry_ids)
@@ -571,9 +581,9 @@ class PlaylistMixin:
                 return False  # store changed under us; a later edit re-marks
             name = self._display_name(p)
             if not os.path.exists(p):
-                self.playlist_store.set_value(it, 1, f"❌ {name} [MISSING]")
+                self.playlist_store.set_value(it, 1, missing_label(name))
             elif not self.is_audio_file(p):
-                self.playlist_store.set_value(it, 1, f"⚠ {name} [UNSUPPORTED]")
+                self.playlist_store.set_value(it, 1, _("⚠ {name} [UNSUPPORTED]").format(name=name))
         if end < len(self.playlist):
             self.tasks.idle_add(self._check_missing_chunk, end)
         return False
@@ -598,7 +608,7 @@ class PlaylistMixin:
         self.entry_ids = [entry_id for entry_id, _ in ordered]
         self.playlist = [path for _, path in ordered]
         self._playlist_edited(rebuild=True)
-        self.show_drop_feedback(f"{SORT_KEYS[key]} — Ctrl+Z to undo")
+        self.show_drop_feedback(_('{action} — Ctrl+Z to undo').format(action=_(SORT_KEYS[key])))
 
     def move_entries(self, indices, offset):
         """Move the given rows by offset as one undoable edit; returns their new

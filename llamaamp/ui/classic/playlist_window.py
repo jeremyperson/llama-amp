@@ -3,9 +3,10 @@ track list. Rows, selection and the queue are the modern playlist's own model,
 so every playlist action behaves the same in both modes."""
 from gi.repository import Gdk, Gtk, Pango, PangoCairo
 
-from ...constants import EMPTY_PLAYLIST_HINT
+from ...constants import CLASSIC_PLAYLIST_HINT
 from ...playlist import SORT_KEYS, move_block
 from .base import SkinnedWindow
+from ...i18n import _
 
 TOP, BOTTOM, LEFT, RIGHT = 20, 38, 12, 20
 ROW_HEIGHT = 13
@@ -21,7 +22,7 @@ def clamp(value, low, high):
 
 class ClassicPlaylistWindow(SkinnedWindow):
     def __init__(self, app, size=None):
-        super().__init__(app, 'Playlist Editor')
+        super().__init__(app, _('Playlist Editor'))
         self.width, self.height = size or DEFAULT_SIZE
         self.shaded = False
         self.scroll_row = 0
@@ -185,16 +186,19 @@ class ClassicPlaylistWindow(SkinnedWindow):
     def _popup(self, name):
         app = self.app
         entries = {
-            'add': [('Add URL…', app.open_url_dialog), ('Add folder…', app.add_folder), ('Add files…', app.add_files)],
-            'remove': [('Remove selected', app.remove_selected), ('Remove missing files', app.remove_missing),
-                       ('Clear playlist', app.clear_playlist), ('Undo edit', app.undo_playlist)],
-            'select': [('Select all', lambda *_: app.playlist_view.get_selection().select_all()),
-                       ('Select none', lambda *_: app.playlist_view.get_selection().unselect_all()),
-                       ('Invert selection', lambda *_: self._invert_selection())],
-            'misc': [('File info…', lambda *_: app.show_file_info()),
-                     ('Sort', [(caption, lambda _w, k=key: app.sort_playlist(k)) for key, caption in SORT_KEYS.items()])],
-            'list': [('Save playlist as…', app._save_playlist_as), ('Export M3U…', app.export_m3u)]
-                    + [(f'Load: {n}', lambda _w, n=n: app._load_named_playlist(n)) for n in app._saved_playlist_names()],
+            'add': [(_('Add URL…'), app.open_url_dialog), (_('Add folder…'), app.add_folder),
+                    (_('Add files…'), app.add_files)],
+            'remove': [(_('Remove selected'), app.remove_selected), (_('Remove missing files'), app.remove_missing),
+                       (_('Clear playlist'), app.clear_playlist), (_('Undo edit'), app.undo_playlist)],
+            'select': [(_('Select all'), lambda *_args: app.playlist_view.get_selection().select_all()),
+                       (_('Select none'), lambda *_args: app.playlist_view.get_selection().unselect_all()),
+                       (_('Invert selection'), lambda *_args: self._invert_selection())],
+            'misc': [(_('File info…'), lambda *_args: app.show_file_info()),
+                     (_('Sort'), [(_(caption), lambda _w, k=key: app.sort_playlist(k))
+                                  for key, caption in SORT_KEYS.items()])],
+            'list': [(_('Save playlist as…'), app._save_playlist_as), (_('Export M3U…'), app.export_m3u)]
+                    + [(_('Load: {name}').format(name=n), lambda _w, n=n: app._load_named_playlist(n))
+                       for n in app._saved_playlist_names()],
         }[name]
         self._menu = app._popup_actions(self.area, entries)
 
@@ -261,7 +265,7 @@ class ClassicPlaylistWindow(SkinnedWindow):
         selection = app.playlist_view.get_selection()
         rows = self._rows()
         if not rows:
-            layout.set_text(EMPTY_PLAYLIST_HINT.replace('Add ▾', 'the Add button'), -1)
+            layout.set_text(_(CLASSIC_PLAYLIST_HINT), -1)
             layout.set_alignment(Pango.Alignment.CENTER)
             layout.set_width(width * Pango.SCALE)
             cr.set_source_rgba(*(c / 255 for c in colors['normal']), .6)

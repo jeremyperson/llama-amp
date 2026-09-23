@@ -3,6 +3,7 @@ from gi.repository import Gtk
 
 from ...constants import EQ_BANDS, PREAMP_DB_RANGE
 from .base import SkinnedWindow
+from ...i18n import _
 
 SLIDER_W, SLIDER_H, THUMB = 14, 63, 11
 PREAMP_X, BANDS_X, BAND_STEP, SLIDERS_Y = 21, 78, 18, 38
@@ -16,7 +17,7 @@ def clamp(value, low=0.0, high=1.0):
 
 class ClassicEqWindow(SkinnedWindow):
     def __init__(self, app):
-        super().__init__(app, 'Equalizer')
+        super().__init__(app, _('Equalizer'))
         self.shaded = False
 
     def skin_size(self):
@@ -81,7 +82,7 @@ class ClassicEqWindow(SkinnedWindow):
         elif name == 'on':
             app.toggle_eq_enabled()
         elif name == 'auto':
-            app.show_drop_feedback("Per-track EQ presets aren't available")
+            app.show_drop_feedback(_("Per-track EQ presets aren't available"))
         elif name == 'presets':
             menu = Gtk.Menu()
             app._append_eq_preset_items(menu)

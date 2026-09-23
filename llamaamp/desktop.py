@@ -6,6 +6,7 @@ import time
 from gi.repository import GLib, Gio, Gtk
 
 from .constants import APP_DIR, APP_NAME, NOTIFY_MIN_INTERVAL_S
+from .i18n import _
 
 
 class DesktopMixin:
@@ -52,21 +53,21 @@ class DesktopMixin:
 
     def _build_tray_menu(self):
         menu = Gtk.Menu()
-        show_item = Gtk.MenuItem(label="Show/Hide")
+        show_item = Gtk.MenuItem(label=_("Show/Hide"))
         show_item.connect("activate", lambda *_: self._toggle_window_visible())
         menu.append(show_item)
         menu.append(Gtk.SeparatorMenuItem())
-        self._tray_play_item = Gtk.MenuItem(label="Play")
+        self._tray_play_item = Gtk.MenuItem(label=_("Play"))
         self._tray_play_item.connect("activate", lambda *_: self.toggle_play_pause(None))
         menu.append(self._tray_play_item)
-        next_item = Gtk.MenuItem(label="Next")
+        next_item = Gtk.MenuItem(label=_("Next"))
         next_item.connect("activate", lambda *_: self.next_song(None))
         menu.append(next_item)
-        prev_item = Gtk.MenuItem(label="Previous")
+        prev_item = Gtk.MenuItem(label=_("Previous"))
         prev_item.connect("activate", lambda *_: self.previous_song(None))
         menu.append(prev_item)
         menu.append(Gtk.SeparatorMenuItem())
-        quit_item = Gtk.MenuItem(label="Quit")
+        quit_item = Gtk.MenuItem(label=_("Quit"))
         quit_item.connect("activate", lambda *_: self.destroy())
         menu.append(quit_item)
         menu.show_all()
@@ -154,5 +155,5 @@ class DesktopMixin:
         self.config['notifications'] = self.config.get('notifications', True) is False
         self.schedule_save_config()
         self.show_drop_feedback(
-            "Notifications on" if self.config['notifications'] else "Notifications off")
+            _("Notifications on") if self.config['notifications'] else _("Notifications off"))
 

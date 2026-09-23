@@ -2,6 +2,7 @@
 from gi.repository import Gdk, Gtk, Pango
 
 from ..constants import EMPTY_PLAYLIST_HINT, URI_TARGET_INFO
+from ..i18n import _, ngettext
 
 
 class PlaylistViewMixin:
@@ -12,13 +13,13 @@ class PlaylistViewMixin:
         playlist_box.set_margin_start(0)
         playlist_box.set_margin_end(0)
         
-        self.playlist_info = Gtk.Label(label='0 tracks')
+        self.playlist_info = Gtk.Label(label=ngettext('{count} track', '{count} tracks', 0).format(count=0))
         self.playlist_info.get_style_context().add_class('muted')
 
         # Type-to-find: scrolls to matches without filtering the model
         # (a TreeModelFilter would break drag-reorder and index arithmetic)
         self.search_entry = Gtk.SearchEntry()
-        self.search_entry.set_placeholder_text("Find in playlist…")
+        self.search_entry.set_placeholder_text(_("Find in playlist…"))
         self.search_entry.get_style_context().add_class('playlist-search')
         self.search_entry.connect("search-changed",
                                   lambda e: self._search_step(restart=True))
@@ -109,7 +110,7 @@ class PlaylistViewMixin:
         # A hint in the empty list (clicks and drops pass through to the view)
         overlay = Gtk.Overlay()
         overlay.add(scrolled)
-        self.playlist_hint = Gtk.Label(label=EMPTY_PLAYLIST_HINT, justify=Gtk.Justification.CENTER)
+        self.playlist_hint = Gtk.Label(label=_(EMPTY_PLAYLIST_HINT), justify=Gtk.Justification.CENTER)
         self.playlist_hint.get_style_context().add_class('muted')
         self.playlist_hint.set_no_show_all(True)
         overlay.add_overlay(self.playlist_hint)
@@ -119,14 +120,14 @@ class PlaylistViewMixin:
         
         # Playlist buttons
         tools = Gtk.Box(spacing=4)
-        add = Gtk.Button(label='Add ▾')
+        add = Gtk.Button(label=_('Add ▾'))
         add.connect('clicked', self._add_popup)
         tools.pack_start(add, False, False, 0)
-        playlist = Gtk.Button(label='Playlist ▾')
+        playlist = Gtk.Button(label=_('Playlist ▾'))
         playlist.connect('clicked', self._playlist_popup)
         tools.pack_start(playlist, False, False, 0)
-        remove = Gtk.Button(label='Remove')
-        remove.set_tooltip_text('Remove selected tracks (Delete) · Ctrl+Z to undo')
+        remove = Gtk.Button(label=_('Remove'))
+        remove.set_tooltip_text(_('Remove selected tracks (Delete) · Ctrl+Z to undo'))
         remove.connect('clicked', self.remove_selected)
         tools.pack_start(remove, False, False, 0)
         self.feedback_label = Gtk.Label(xalign=1)
@@ -155,7 +156,7 @@ class PlaylistViewMixin:
     def show_jump_dialog(self, *_args):
         """Winamp 'J' jump-to-file: type to filter, Enter plays,
         Shift+Enter queues (Play Next), Esc closes."""
-        dialog = Gtk.Dialog(title="Jump to File", transient_for=self, modal=True)
+        dialog = Gtk.Dialog(title=_("Jump to File"), transient_for=self, modal=True)
         dialog.set_default_size(420, 320)
         box = dialog.get_content_area()
         box.set_margin_top(8); box.set_margin_bottom(8)
@@ -163,7 +164,7 @@ class PlaylistViewMixin:
         box.set_spacing(6)
 
         entry = Gtk.SearchEntry()
-        entry.set_placeholder_text("Type to filter…  (Enter: play · Shift+Enter: queue)")
+        entry.set_placeholder_text(_("Type to filter…  (Enter: play · Shift+Enter: queue)"))
         box.pack_start(entry, False, False, 0)
 
         store = Gtk.ListStore(int, str)   # playlist index, display
@@ -237,12 +238,13 @@ class PlaylistViewMixin:
             self.search_count.set_text('')
             return
         if not matches:
-            self.search_count.set_text('No matches')
+            self.search_count.set_text(_('No matches'))
             context.add_class('search-miss')
             return
         if not select:
             self.search_count.set_text(f'{matches.index(self._search_pos) + 1}/{len(matches)}'
-                                       if self._search_pos in matches else f'{len(matches)} matches')
+                                       if self._search_pos in matches else
+                                       ngettext('{count} match', '{count} matches', len(matches)).format(count=len(matches)))
             return
         index = matches[0] if restart else next((i for i in matches if i > self._search_pos), matches[0])
         self._search_pos = index
@@ -303,30 +305,30 @@ class PlaylistViewMixin:
         menu = Gtk.Menu()
         if not paths:
             return menu
-        play_item = Gtk.MenuItem(label="Play Now")
+        play_item = Gtk.MenuItem(label=_("Play Now"))
         play_item.connect("activate",
                           lambda _w, i=paths[0].get_indices()[0]: self._play_index(i))
         menu.append(play_item)
 
-        next_item = Gtk.MenuItem(label="Play Next")
+        next_item = Gtk.MenuItem(label=_("Play Next"))
         next_item.connect("activate",
                           lambda _w, ps=sel_paths: self._queue_paths(ps))
         menu.append(next_item)
 
         unq = [p for p in sel_paths if p in self._play_next]
-        unq_item = Gtk.MenuItem(label="Remove from Queue")
+        unq_item = Gtk.MenuItem(label=_("Remove from Queue"))
         unq_item.set_sensitive(bool(unq))
         unq_item.connect("activate",
                          lambda _w, ps=unq: self._unqueue_paths(ps))
         menu.append(unq_item)
 
-        info_item = Gtk.MenuItem(label="File Info… (Alt+3)")
+        info_item = Gtk.MenuItem(label=_("File Info… (Alt+3)"))
         info_item.connect("activate",
                           lambda _w, p=model[paths[0]][0]: self.show_file_info(path=p))
         menu.append(info_item)
 
         menu.append(Gtk.SeparatorMenuItem())
-        rm_item = Gtk.MenuItem(label="Remove")
+        rm_item = Gtk.MenuItem(label=_("Remove"))
         rm_item.connect("activate", lambda _w: self.remove_selected(None))
         menu.append(rm_item)
         menu.show_all()

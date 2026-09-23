@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Ready for translation: every visible string goes through gettext, with
+  proper plural forms. See CONTRIBUTING.md → Translating to add a language.
 - Fixed: after double size or shading, a docked classic window could overlap
   the one above it (the playlist covered half the equalizer).
 - The empty playlist now says "Drop audio files or folders here or use Add ▾";

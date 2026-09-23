@@ -64,7 +64,7 @@ def render(app, scene):
     surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
     # System-font text (the empty-playlist hint) differs between machines
     with patch.object(type(app), '_current_position_ns', lambda self: 83 * SECOND), \
-            patch.object(playlist_window, 'EMPTY_PLAYLIST_HINT', ''):
+            patch.object(playlist_window, 'CLASSIC_PLAYLIST_HINT', ''):
         window.paint(cairo.Context(surface), app.skin)
     window.shaded = False
     return surface

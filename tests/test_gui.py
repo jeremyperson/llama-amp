@@ -6,6 +6,8 @@ import sys
 import tempfile
 import time
 import unittest
+import gettext
+import re
 import wave
 import zipfile
 
@@ -21,6 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # golden_scenes, run either way
 from golden_scenes import GOLDEN_DIR, SCENES, difference, render
+from llamaamp import i18n
 from llamaamp.app import MusicPlayer
 from llamaamp.constants import REPEAT_ALL, REPEAT_ONE, SHUFFLE_TRACKS
 from llamaamp.fileinfo import read_file_info
@@ -791,6 +794,65 @@ class PlayerTests(unittest.TestCase):
         self.assertFalse(a.playlist_hint.get_visible())
         a.clear_playlist(None)
         self.assertTrue(a.playlist_hint.get_visible())
+
+    def test_every_visible_string_goes_through_translation(self):
+        class Pseudo(gettext.NullTranslations):
+            def gettext(self, message):
+                return f'⟦{message}⟧'
+            def ngettext(self, singular, plural, count):
+                return f'⟦{singular if count == 1 else plural}⟧'
+        self.app.destroy()
+        with patch.object(i18n, '_translation', Pseudo()):
+            self.app = a = MusicPlayer()
+            a.show_all()
+            a._add_paths(self.files)
+            texts = []
+            def collect(widget):
+                if isinstance(widget, (Gtk.Label, Gtk.Button, Gtk.MenuItem)) and widget.get_label():
+                    texts.append(widget.get_label())
+                if widget.get_tooltip_text():
+                    texts.append(widget.get_tooltip_text())
+                if isinstance(widget, Gtk.Container):
+                    widget.foreach(collect)
+                if isinstance(widget, Gtk.MenuItem) and widget.get_submenu():
+                    collect(widget.get_submenu())
+            collect(a)
+            collect(a.build_settings_menu())
+            a._playlist_popup(a.playlist_view)
+            collect(a._actions_menu)
+            a._select_row(0)
+            collect(a._build_row_menu())
+            # Dynamic or untranslatable text: track data, numbers, times, the brand
+            dynamic = re.compile(r'^(LLAMA AMP|v[\d.]+|[\d:.+−-]*|[\d.]+ ?kHz|\d+ (kbps)?|—|[0-9]+\.wav|'
+                                 r'[0-9]+|\d+/\d+|0:0\d|[\d.]+[Kk]|WAV.*|⇄.*|↻.*|[▶Ⅱ⚙▱−×]|CENTER|70%|Flat|.*\(hw:.*\))$')
+            unmarked = sorted({text for text in texts if re.search('[A-Za-z]{2}', text)
+                               and '⟦' not in text and not dynamic.match(text)})
+            a._actions_menu.popdown()
+        self.assertEqual(unmarked, [])
+
+    def test_compiled_catalogs_translate_plurals_and_placeholders(self):
+        if not shutil.which('msgfmt'):
+            self.skipTest('msgfmt (gettext) not installed')
+        with tempfile.TemporaryDirectory() as directory:
+            po = Path(directory, 'de.po')
+            po.write_text('msgid ""\nmsgstr ""\n"Project-Id-Version: test\\n"\n"PO-Revision-Date: 2026-09-23\\n"\n'
+                          '"Last-Translator: test\\n"\n"Language-Team: test\\n"\n"Language: de\\n"\n'
+                          '"MIME-Version: 1.0\\n"\n"Content-Transfer-Encoding: 8bit\\n"\n'
+                          '"Content-Type: text/plain; charset=UTF-8\\n"\n'
+                          '"Plural-Forms: nplurals=2; plural=(n != 1);\\n"\n\n'
+                          'msgid "Play"\nmsgstr "Abspielen"\n\n'
+                          'msgid "{app} *** Please select a file ***"\nmsgstr "{app} *** Bitte eine Datei wählen ***"\n\n'
+                          'msgid "{count} track"\nmsgid_plural "{count} tracks"\n'
+                          'msgstr[0] "{count} Titel"\nmsgstr[1] "{count} Titel"\n', encoding='utf-8')
+            target = Path(directory, 'locale', 'de', 'LC_MESSAGES')
+            target.mkdir(parents=True)
+            subprocess.run(['msgfmt', '--check', '-o', str(target / 'llamaamp.mo'), str(po)], check=True)
+            catalog = gettext.translation('llamaamp', localedir=str(Path(directory, 'locale')), languages=['de'])
+        with patch.object(i18n, '_translation', catalog):
+            self.assertEqual(i18n._('Play'), 'Abspielen')
+            self.assertEqual(i18n.default_song_text(), 'Llama Amp *** Bitte eine Datei wählen ***')
+            self.assertEqual(i18n.ngettext('{count} track', '{count} tracks', 3).format(count=3), '3 Titel')
+            self.assertEqual(i18n._('Untranslated stays English'), 'Untranslated stays English')
 
     def test_corrupt_config_values_fall_back_to_defaults(self):
         a = self.app

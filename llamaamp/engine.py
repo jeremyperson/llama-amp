@@ -22,6 +22,7 @@ from .constants import (
     _MAG_LIST_RE,
     _MAG_ONE_RE,
 )
+from .i18n import _
 
 
 class EngineMixin:
@@ -172,11 +173,13 @@ class EngineMixin:
         self.direct_mode = not self.direct_mode
         self._rebuild_pipeline()
         self.schedule_save_config()
-        state = ("ON — EQ/balance bypassed, analyzer on" if self.direct_mode
-                 else "OFF — DSP active")
-        if self.direct_mode and self.replaygain != 'off':
-            state += " (ReplayGain inactive in this mode)"
-        self.show_drop_feedback(f"Direct mode {state}")
+        if not self.direct_mode:
+            message = _("Direct mode OFF — DSP active")
+        elif self.replaygain != 'off':
+            message = _("Direct mode ON — EQ/balance bypassed, analyzer on (ReplayGain inactive in this mode)")
+        else:
+            message = _("Direct mode ON — EQ/balance bypassed, analyzer on")
+        self.show_drop_feedback(message)
 
     def set_replaygain(self, mode):
         """Switch ReplayGain mode. track<->album is a live property flip;
@@ -192,9 +195,9 @@ class EngineMixin:
         self.schedule_save_config()
         if self.direct_mode and mode != 'off':
             self.show_drop_feedback(
-                f"ReplayGain {mode} armed — no effect while Direct Mode is ON")
+                _('ReplayGain {mode} armed — no effect while Direct Mode is ON').format(mode=mode))
         else:
-            self.show_drop_feedback(f"ReplayGain: {mode}")
+            self.show_drop_feedback(_('ReplayGain: {mode}').format(mode=mode))
 
     def _list_alsa_devices(self):
         """[(hw:X,Y, 'CardName — PcmName'), ...] for all playback PCMs."""
@@ -231,7 +234,7 @@ class EngineMixin:
         if self.alsa_output:
             self._alsa_reacquire()
         else:
-            self.show_drop_feedback("Device saved — enable ALSA Output to use it")
+            self.show_drop_feedback(_("Device saved — enable ALSA Output to use it"))
 
     def _detect_alsa_device(self):
         """Pick the hw: device for direct DAC output. Config 'alsa_device'
@@ -294,7 +297,7 @@ class EngineMixin:
             finally:
                 self._switching_output = False
             self.schedule_save_config()
-            self.show_drop_feedback("Output: system mixer")
+            self.show_drop_feedback(_("Output: system mixer"))
             return
 
         # Turning ON: async retry while the server releases the device
@@ -307,7 +310,7 @@ class EngineMixin:
         sink = self._make_alsa_sink()
         if sink is None:
             self.alsa_output = False
-            self.show_drop_feedback("alsasink not available")
+            self.show_drop_feedback(_("alsasink not available"))
             return
         self.alsa_output = True
         self._alsa_ctx = {
@@ -318,7 +321,7 @@ class EngineMixin:
         self._switching_output = True
         self.player.set_state(Gst.State.NULL)
         self.player.set_property("audio-sink", sink)
-        self.show_drop_feedback(f"Acquiring {self._alsa_device}…")
+        self.show_drop_feedback(_('Acquiring {alsa_device}…').format(alsa_device=self._alsa_device))
         self.tasks.timeout_add(400, self._alsa_try_start)
 
     def _alsa_try_start(self):
@@ -336,7 +339,7 @@ class EngineMixin:
                 self.player.set_state(Gst.State.NULL)
                 if ctx['tries'] < 5:
                     self.show_drop_feedback(
-                        f"DAC busy — waiting for release ({ctx['tries']}/5)…")
+                        _('DAC busy — waiting for release ({attempt}/5)…').format(attempt=ctx['tries']))
                     self.tasks.timeout_add(1800, self._alsa_try_start)
                     return False
                 # Give up: revert to the mixer
@@ -351,14 +354,14 @@ class EngineMixin:
                     self._sync_play_ui(True)
                 self._switching_output = False
                 self.schedule_save_config()
-                self.show_drop_feedback(f"ALSA {dev} unavailable — using mixer")
+                self.show_drop_feedback(_('ALSA {dev} unavailable — using mixer').format(dev=dev))
                 return False
             if ctx['was_playing']:
                 self._sync_play_ui(True)
 
         self._switching_output = False
         self.schedule_save_config()
-        self.show_drop_feedback(f"ALSA direct → {self._alsa_device}")
+        self.show_drop_feedback(_('ALSA direct → {alsa_device}').format(alsa_device=self._alsa_device))
         return False
 
     def eq_value_to_db(self, v):
@@ -411,7 +414,7 @@ class EngineMixin:
             ctx = self.eq_on_btn.get_style_context()
             (ctx.add_class if self.eq_enabled else ctx.remove_class)('active')
         self.schedule_save_config()
-        self.show_drop_feedback("EQ on" if self.eq_enabled else "EQ off (bypassed)")
+        self.show_drop_feedback(_("EQ on") if self.eq_enabled else _("EQ off (bypassed)"))
 
     def on_balance_changed(self, scale):
         self.balance = scale.get_value()
@@ -500,7 +503,7 @@ class EngineMixin:
             }
             self._switching_output = True
             self.player.set_state(Gst.State.NULL)
-            self.show_drop_feedback("DAC busy — waiting for release…")
+            self.show_drop_feedback(_("DAC busy — waiting for release…"))
             self.tasks.timeout_add(1500, self._alsa_try_start)
             return
         err, dbg = message.parse_error()
@@ -550,7 +553,7 @@ class EngineMixin:
             if not getattr(self, '_buffering', False) and not getattr(self, '_pipeline_live', False):
                 self._buffering = True
                 self.player.set_state(Gst.State.PAUSED)
-            self.info_label.set_text(f"Buffering {percent}%")
+            self.info_label.set_text(_('Buffering {percent}%').format(percent=percent))
         else:
             if getattr(self, '_buffering', False):
                 self._buffering = False
@@ -739,13 +742,13 @@ class EngineMixin:
         self._sleep_mode = mode
         if mode == 'track':
             self._sleep_after_track = True
-            self.show_drop_feedback("Sleeping after this track")
+            self.show_drop_feedback(_("Sleeping after this track"))
         elif isinstance(mode, int) and mode > 0:
             self._sleep_timer_id = self.tasks.timeout_add_seconds(mode * 60, self._sleep_fire)
             self._sleep_deadline = GLib.get_monotonic_time() + mode * 60 * 1_000_000
-            self.show_drop_feedback(f"Sleeping in {mode} min")
+            self.show_drop_feedback(_('Sleeping in {minutes} min').format(minutes=mode))
         else:
-            self.show_drop_feedback("Sleep timer off")
+            self.show_drop_feedback(_("Sleep timer off"))
         self._update_stop_btn_cue()
         self._prepare_next()
 
@@ -756,7 +759,7 @@ class EngineMixin:
         if self.is_playing:
             self.player.set_state(Gst.State.PAUSED)
             self._sync_play_ui(False)
-        self.show_drop_feedback("Sleep timer — paused")
+        self.show_drop_feedback(_("Sleep timer — paused"))
         return False
 
     def advance_track(self, auto=False, after_error=False):
@@ -772,7 +775,7 @@ class EngineMixin:
             self._sleep_mode = None
             self._update_stop_btn_cue()
             self.stop_song(None)
-            self.show_drop_feedback("Sleep timer — stopped after track")
+            self.show_drop_feedback(_("Sleep timer — stopped after track"))
             return
         if auto and self.repeat_mode == REPEAT_ONE and not after_error:
             self.player.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH, 0)
@@ -847,7 +850,7 @@ class EngineMixin:
         self.gapless = not self.gapless
         self.schedule_save_config()
         self.show_drop_feedback(
-            "Gapless playback on" if self.gapless else "Gapless playback off")
+            _("Gapless playback on") if self.gapless else _("Gapless playback off"))
 
     # Audio control methods
     def toggle_play_pause(self, button):
@@ -901,8 +904,8 @@ class EngineMixin:
         # No available songs found
         self.stop_song(None)
         self.current_song = None
-        self._set_title_text("❌ No available files in playlist")
-        self.info_label.set_text("All files are missing - please re-add music files")
+        self._set_title_text(_("❌ No available files in playlist"))
+        self.info_label.set_text(_("All files are missing - please re-add music files"))
 
     def stop_song(self, button):
         self._finish_crossfade()
@@ -1022,8 +1025,8 @@ class EngineMixin:
                 self.player.set_state(Gst.State.NULL)
                 self._sync_play_ui(False, stopped=True)
                 song_name = self._display_name(file_path)
-                self._set_title_text(f"❌ File not found: {song_name}")
-                self.info_label.set_text("File missing - please re-add to playlist")
+                self._set_title_text(_('❌ File not found: {song_name}').format(song_name=song_name))
+                self.info_label.set_text(_("File missing - please re-add to playlist"))
                 self._set_album_art(None)
                 self.update_missing_file_in_playlist(index)
                 self._select_row(index)

@@ -58,6 +58,17 @@ edit, relaunch, done.
 Don't bump `APP_VERSION` in PRs — versioning and releases are handled by
 the maintainer at release time.
 
+## Translating
+
+Strings go through GNU gettext (domain `llamaamp`). To add a language, copy
+`po/llamaamp.pot` to `po/<lang>.po` (for example `po/de.po`), translate it with
+any PO editor, then run `python3 tools/translations.py compile` and start the
+app from the checkout with that locale (`LANGUAGE=de python3 musicPlayer.py`).
+Keep `{placeholders}` as they are; `msgfmt --check` rejects broken ones.
+Developers: wrap new user-visible text in `_()` (or `ngettext` for counts),
+and run `python3 tools/translations.py extract` to refresh the template. The
+test `test_every_visible_string_goes_through_translation` catches misses.
+
 ## Reporting bugs
 
 Use the bug-report issue template. The three details that matter most:

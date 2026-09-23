@@ -4,9 +4,11 @@ import re
 
 from gi.repository import Gdk, Gtk, Pango
 
-from ..constants import APP_VERSION, DEFAULT_SONG_TEXT, URI_TARGET_INFO, WINDOW_H, WINDOW_W
+from ..constants import APP_VERSION, URI_TARGET_INFO, WINDOW_H, WINDOW_W
 from .panels import PanelManager
 from .themes import THEMES
+from ..i18n import N_, _, default_song_text
+from ..playlist import added_feedback
 
 
 class WindowMixin:
@@ -24,7 +26,7 @@ class WindowMixin:
         if self._iconified:
             self._marquee_stop()
         else:
-            self._set_title_text(getattr(self, '_title_full', '') or DEFAULT_SONG_TEXT)
+            self._set_title_text(getattr(self, '_title_full', '') or default_song_text())
         return False
 
     def setup_drag_and_drop(self):
@@ -72,7 +74,7 @@ class WindowMixin:
                 return
             files = self._uris_to_audio_paths(uris)
             if files:
-                self._add_paths(files, feedback=f"Added {len(files)} file(s)")
+                self._add_paths(files, feedback=added_feedback(len(files)))
         except Exception as e:
             self.log_debug(f"Error handling dropped files: {e}")
 
@@ -82,7 +84,7 @@ class WindowMixin:
         if info != URI_TARGET_INFO:
             return  # let the TreeView's own reorder machinery run
         files = self._uris_to_audio_paths(data.get_uris() or [])
-        added = self._add_paths(files, feedback=f"Added {len(files)} file(s)" if files else None)
+        added = self._add_paths(files, feedback=added_feedback(len(files)) if files else None)
         drag_context.finish(bool(added), False, time)
         widget.stop_emission_by_name("drag-data-received")
 
@@ -311,7 +313,7 @@ class WindowMixin:
         self._update_analyzer_visibility()
         self._marquee_stop()
         if not self._windowshade:
-            self._set_title_text(getattr(self, '_title_full', '') or DEFAULT_SONG_TEXT)
+            self._set_title_text(getattr(self, '_title_full', '') or default_song_text())
         def settled():
             self._layout_switching = False
             return False
@@ -330,8 +332,8 @@ class WindowMixin:
         grip.set_valign(Gtk.Align.END)
         grip.set_margin_end(2)
         grip.set_margin_bottom(2)
-        grip.set_tooltip_text('Drag to resize')
-        grip.get_accessible().set_name('Resize window')
+        grip.set_tooltip_text(_('Drag to resize'))
+        grip.get_accessible().set_name(_('Resize window'))
         grip.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.ENTER_NOTIFY_MASK
                         | Gdk.EventMask.LEAVE_NOTIFY_MASK)
         grip.connect('draw', self._draw_resize_grip)
@@ -412,8 +414,8 @@ class WindowMixin:
         self.player_frame.add(player_box)
         self.main_box.pack_start(self.player_frame, False, False, 0)
         self.panels = PanelManager(self, self.main_box)
-        self.panels.add('eq', 'EQUALIZER', self.create_equalizer())
-        self.panels.add('playlist', 'PLAYLIST', self.create_playlist(), expand=True)
+        self.panels.add('eq', N_('EQUALIZER'), self.create_equalizer())
+        self.panels.add('playlist', N_('PLAYLIST'), self.create_playlist(), expand=True)
         self.set_geometry_hints(None, self._minimum_geometry(self._px(220)),
                                 Gdk.WindowHints.MIN_SIZE)
         self.time_display.connect('notify::label', lambda *_: self.shade_time.set_text(self.time_display.get_text()))
@@ -433,7 +435,7 @@ class WindowMixin:
         self.version_badge = Gtk.Label(label=f'v{APP_VERSION}')
         self.version_badge.get_style_context().add_class('version-badge')
         self.version_badge.set_valign(Gtk.Align.CENTER)
-        self.version_badge.get_accessible().set_name(f'Version {APP_VERSION}')
+        self.version_badge.get_accessible().set_name(_('Version {version}').format(version=APP_VERSION))
         self.brand_group.pack_start(self.version_badge, False, False, 0)
         box.pack_start(self.brand_group, False, False, 0)
         self.shade_title = Gtk.Label()
@@ -447,19 +449,19 @@ class WindowMixin:
         box.pack_start(self.shade_time, False, False, 2)
         self.shade_controls = Gtk.Box(spacing=1)
         self.shade_controls.set_no_show_all(True)
-        for icon, tip, callback in [('previous', 'Previous', self.previous_song),
-                                     ('play', 'Play / Pause (Space)', self.toggle_play_pause),
-                                     ('next', 'Next', self.next_song)]:
+        for icon, tip, callback in [('previous', _('Previous'), self.previous_song),
+                                     ('play', _('Play / Pause (Space)'), self.toggle_play_pause),
+                                     ('next', _('Next'), self.next_song)]:
             button = self._transport_button(icon, tip, callback)
             self.shade_controls.pack_start(button, False, False, 0)
         box.pack_start(self.shade_controls, False, False, 0)
         spacer = Gtk.Label()
         box.pack_start(spacer, True, True, 0)
         self._title_spacer = spacer
-        for label, tip, callback in [('⚙', 'Settings', self.on_settings_clicked),
-                                     ('▱', 'Windowshade / restore (double-click title bar)', self.toggle_windowshade),
-                                     ('−', 'Minimize', lambda *_: self.iconify()),
-                                     ('×', 'Close', self.on_close_clicked)]:
+        for label, tip, callback in [('⚙', _('Settings'), self.on_settings_clicked),
+                                     ('▱', _('Windowshade / restore (double-click title bar)'), self.toggle_windowshade),
+                                     ('−', _('Minimize'), lambda *_args: self.iconify()),
+                                     ('×', _('Close'), self.on_close_clicked)]:
             button = Gtk.Button(label=label)
             button.set_tooltip_text(tip)
             button.get_accessible().set_name(tip)

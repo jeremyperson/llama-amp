@@ -29,3 +29,6 @@ nohup.out
 
 # Personal local launcher (absolute paths); the packaged .desktop is generated
 music-player.desktop
+
+# Compiled translations (tools/translations.py compile)
+locale/
