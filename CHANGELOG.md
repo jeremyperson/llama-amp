@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed: after double size or shading, a docked classic window could overlap
+  the one above it (the playlist covered half the equalizer).
+- The empty playlist now says "Drop audio files or folders here or use Add ▾";
+  the window-wide tooltip that popped up over the equalizer is gone.
 - Drag selected rows up or down in the classic playlist editor to move them
   as a block (one Ctrl+Z undo step), as in Winamp.
 

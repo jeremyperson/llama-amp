@@ -43,6 +43,7 @@ META_CACHE_LIMIT = 64                    # LRU caps: probed metadata / embedded 
 FOLDER_ART_CACHE_LIMIT = 32              # per-directory folder art
 SEEK_STEP_SECONDS = 5                    # arrow-key seek step
 VOLUME_STEP = 0.05                       # arrow-key / scroll volume step
+EMPTY_PLAYLIST_HINT = "Drop audio files or folders here\nor use Add ▾"
 URI_TARGET_INFO = 80                     # DnD info id for uri-list drops on the playlist
 # Preamp: master gain ahead of the EQ bands (headroom for boosts), Winamp-style
 PREAMP_DB_RANGE = 12.0                   # slider spans ±12 dB, 0.5 = unity

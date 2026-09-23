@@ -71,10 +71,13 @@ class ClassicMode:
     def _docked_position(self, name):
         """Where a docked window sits: under the main window, or under a docked
         equalizer for the playlist."""
+        # Heights from the skin geometry: get_size() lags a resize (shade,
+        # double size) until the window manager configures the window.
+        scale = self.app.ui_scale
         x, y = self.main.get_position()
-        y += self.main.get_size()[1]
+        y += self.main.skin_size()[1] * scale
         if name == 'playlist' and self.eq.get_visible() and self.docked['eq']:
-            y += self.eq.get_size()[1]
+            y += self.eq.skin_size()[1] * scale
         return x, y
 
     def relayout(self):

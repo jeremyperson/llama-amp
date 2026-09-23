@@ -64,8 +64,6 @@ class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, Playl
         if visual is not None and screen.is_composited():
             self.set_visual(visual)
         
-        # Add helpful tooltip for drag and drop
-        self.set_tooltip_text("Drag and drop audio files to add them to the playlist")
         
         # Audio setup
         self.player = Gst.ElementFactory.make("playbin", "player")

@@ -3,6 +3,7 @@ track list. Rows, selection and the queue are the modern playlist's own model,
 so every playlist action behaves the same in both modes."""
 from gi.repository import Gdk, Gtk, Pango, PangoCairo
 
+from ...constants import EMPTY_PLAYLIST_HINT
 from ...playlist import SORT_KEYS, move_block
 from .base import SkinnedWindow
 
@@ -259,6 +260,13 @@ class ClassicPlaylistWindow(SkinnedWindow):
         layout.set_font_description(font)
         selection = app.playlist_view.get_selection()
         rows = self._rows()
+        if not rows:
+            layout.set_text(EMPTY_PLAYLIST_HINT.replace('Add ▾', 'the Add button'), -1)
+            layout.set_alignment(Pango.Alignment.CENTER)
+            layout.set_width(width * Pango.SCALE)
+            cr.set_source_rgba(*(c / 255 for c in colors['normal']), .6)
+            cr.move_to(x, y + height / 2 - layout.get_pixel_size()[1] / 2)
+            PangoCairo.show_layout(cr, layout)
         for offset in range(self._visible_rows() + 1):
             index = self.scroll_row + offset
             if index >= len(rows):

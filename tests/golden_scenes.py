@@ -10,6 +10,8 @@ from unittest.mock import patch
 
 import cairo
 
+from llamaamp.ui.classic import playlist_window
+
 GOLDEN_DIR = Path(__file__).resolve().parent / 'golden'
 SECOND = 1_000_000_000
 
@@ -60,7 +62,9 @@ def render(app, scene):
     window.shaded, window.focused = shaded, True
     width, height = window.skin_size()
     surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
-    with patch.object(type(app), '_current_position_ns', lambda self: 83 * SECOND):
+    # System-font text (the empty-playlist hint) differs between machines
+    with patch.object(type(app), '_current_position_ns', lambda self: 83 * SECOND), \
+            patch.object(playlist_window, 'EMPTY_PLAYLIST_HINT', ''):
         window.paint(cairo.Context(surface), app.skin)
     window.shaded = False
     return surface

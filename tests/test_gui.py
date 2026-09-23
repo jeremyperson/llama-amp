@@ -714,6 +714,22 @@ class PlayerTests(unittest.TestCase):
         a.undo_playlist()
         self.assertEqual(a.entry_ids, keys)
 
+    def test_docked_classic_windows_restack_after_size_changes(self):
+        a = self.app
+        a.set_skin('builtin')
+        classic = a._classic
+        self.pump(.2)
+        def stacked():
+            x, y = classic.main.get_position()
+            return (tuple(classic.eq.get_position()) == (x, y + 116 * a.ui_scale)
+                    and tuple(classic.playlist.get_position()) == (x, y + 232 * a.ui_scale))
+        self.wait_for(stacked)
+        a.toggle_double_size()
+        self.wait_for(stacked)
+        classic.eq.toggle_shade()                     # a 14px equalizer strip
+        x, y = classic.main.get_position()
+        self.wait_for(lambda: tuple(classic.playlist.get_position()) == (x, y + (116 + 14) * 2))
+
     def test_classic_windows_paint_every_state(self):
         a = self.app
         a._add_paths(self.files)
@@ -766,6 +782,15 @@ class PlayerTests(unittest.TestCase):
             with self.subTest(scene=scene):
                 changed = difference(render(a, scene), GOLDEN_DIR / f'{scene}.png')
                 self.assertLessEqual(changed, .001, f'{scene}: {changed:.2%} of pixels changed')
+
+    def test_empty_playlist_shows_a_drop_hint_instead_of_a_window_tooltip(self):
+        a = self.app
+        self.assertIsNone(a.get_tooltip_text())
+        self.assertTrue(a.playlist_hint.get_visible())
+        a._add_paths(self.files)
+        self.assertFalse(a.playlist_hint.get_visible())
+        a.clear_playlist(None)
+        self.assertTrue(a.playlist_hint.get_visible())
 
     def test_corrupt_config_values_fall_back_to_defaults(self):
         a = self.app

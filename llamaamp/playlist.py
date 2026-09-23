@@ -470,6 +470,8 @@ class PlaylistMixin:
 
     def update_playlist_info(self):
         count = len(self.playlist)
+        if hasattr(self, 'playlist_hint'):
+            self.playlist_hint.set_visible(count == 0)
         base = "1 track" if count == 1 else f"{count} tracks"
         known = [self._duration_seconds(p) for p in self.playlist]
         known = [s for s in known if s]

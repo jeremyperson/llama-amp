@@ -1,7 +1,7 @@
 """Playlist panel: tree view, search, jump dialog and row menus."""
 from gi.repository import Gdk, Gtk, Pango
 
-from ..constants import URI_TARGET_INFO
+from ..constants import EMPTY_PLAYLIST_HINT, URI_TARGET_INFO
 
 
 class PlaylistViewMixin:
@@ -106,7 +106,16 @@ class PlaylistViewMixin:
         selection.connect("changed", self.on_playlist_selection_changed)
         
         scrolled.add(self.playlist_view)
-        playlist_box.pack_start(scrolled, True, True, 0)
+        # A hint in the empty list (clicks and drops pass through to the view)
+        overlay = Gtk.Overlay()
+        overlay.add(scrolled)
+        self.playlist_hint = Gtk.Label(label=EMPTY_PLAYLIST_HINT, justify=Gtk.Justification.CENTER)
+        self.playlist_hint.get_style_context().add_class('muted')
+        self.playlist_hint.set_no_show_all(True)
+        overlay.add_overlay(self.playlist_hint)
+        overlay.set_overlay_pass_through(self.playlist_hint, True)
+        self.playlist_hint.show()
+        playlist_box.pack_start(overlay, True, True, 0)
         
         # Playlist buttons
         tools = Gtk.Box(spacing=4)
