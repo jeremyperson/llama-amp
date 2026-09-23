@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- File Info (Alt+3, or right-click a playlist row): tags, ReplayGain
+  values, format, sample rate, bit depth, bitrate, length, location, size
+  and cover art for the selected or current track. Read-only; files are
+  probed in the background so slow drives never freeze the player.
 - Playlist ▾ → Sort: by title, artist, album (disc and track order),
   filename, path or length, plus Reverse and Randomize. Each is one Ctrl+Z
   undo step and keeps the playing track, the queue and duplicate entries.

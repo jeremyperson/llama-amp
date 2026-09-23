@@ -304,6 +304,11 @@ class PlaylistViewMixin:
                          lambda _w, ps=unq: self._unqueue_paths(ps))
         menu.append(unq_item)
 
+        info_item = Gtk.MenuItem(label="File Info… (Alt+3)")
+        info_item.connect("activate",
+                          lambda _w, p=model[paths[0]][0]: self.show_file_info(path=p))
+        menu.append(info_item)
+
         menu.append(Gtk.SeparatorMenuItem())
         rm_item = Gtk.MenuItem(label="Remove")
         rm_item.connect("activate", lambda _w: self.remove_selected(None))

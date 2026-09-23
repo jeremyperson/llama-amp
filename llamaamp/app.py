@@ -31,6 +31,7 @@ from .playlist import PlaylistMixin
 from .scrobble import ScrobbleMixin
 from .tasks import MainLoopTasks
 from .ui.controls import ControlsMixin
+from .ui.file_info import FileInfoMixin
 from .ui.menus import MenusMixin
 from .ui.playlist_view import PlaylistViewMixin
 from .ui.window import WindowMixin
@@ -39,7 +40,7 @@ from .updates import UpdatesMixin
 
 class MusicPlayer(EngineMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisMixin,
                   DesktopMixin, ScrobbleMixin, UpdatesMixin, AnalyzerViewMixin, WindowMixin,
-                  MenusMixin, ControlsMixin, PlaylistViewMixin, Gtk.Window):
+                  MenusMixin, ControlsMixin, PlaylistViewMixin, FileInfoMixin, Gtk.Window):
     def __init__(self):
         super().__init__(title=APP_NAME)
         self.tasks = MainLoopTasks()
@@ -106,6 +107,7 @@ class MusicPlayer(EngineMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisM
         self._suppress_store = False     # programmatic store edits (don't resync)
         self._playlist_titles = {}  # path -> tagged title, or None after probing
         self._playlist_tags = {}    # path -> artist/album/disc/track for sorting
+        self._file_info_dialog = None
         self._title_rows = {}       # path -> persistent GTK row references
         self._meta_cache = OrderedDict()         # path -> props dict, or False (probe failed)
         self._art_cache = OrderedDict()          # path -> embedded-art GdkPixbuf
@@ -206,8 +208,8 @@ class MusicPlayer(EngineMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisM
     def on_window_key_press(self, widget, event):
         """Global shortcuts: Space play/pause, Winamp's Z/X/C/V/B transport,
         arrows seek/volume, S shuffle, R repeat, J jump to file, Ctrl+J jump to
-        time, Ctrl+T elapsed/remaining, Ctrl+D double size, Ctrl+O add files,
-        Ctrl+L open URL.
+        time, Ctrl+T elapsed/remaining, Ctrl+D double size, Alt+3 file info,
+        Ctrl+O add files, Ctrl+L open URL.
         Delete/Backspace propagate to the playlist."""
         # Typing in an entry (playlist search, dialogs) must never trigger
         # shortcuts — let the widget consume every key.
@@ -238,6 +240,9 @@ class MusicPlayer(EngineMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisM
             return True
         if ctrl and key in (Gdk.KEY_d, Gdk.KEY_D):
             self.toggle_double_size()
+            return True
+        if event.state & Gdk.ModifierType.MOD1_MASK and key == Gdk.KEY_3:
+            self.show_file_info()
             return True
         if key == Gdk.KEY_space:
             self.toggle_play_pause(None)

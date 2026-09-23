@@ -18,8 +18,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from llamaamp.app import MusicPlayer
 from llamaamp.constants import REPEAT_ALL, REPEAT_ONE, SHUFFLE_TRACKS
+from llamaamp.fileinfo import read_file_info
 from llamaamp.ui.themes import THEMES
-from gi.repository import Gdk, GLib, Gst
+from gi.repository import Gdk, GLib, Gst, Gtk
 
 
 @unittest.skipUnless(os.environ.get('DISPLAY'), 'requires a display (use xvfb-run)')
@@ -494,6 +495,44 @@ class PlayerTests(unittest.TestCase):
         self.wait_for(lambda: a._playlist_tags.get(tagged))
         self.assertEqual(a._playlist_tags[tagged],
                          {'artist': 'Llama', 'album': 'Side A', 'disc': 2, 'track': 3})
+
+    @unittest.skipUnless(shutil.which('ffmpeg'), 'ffmpeg generates tagged test audio')
+    def test_file_info_reads_tags_audio_and_file_details(self):
+        tagged = str(Path(self.directory.name, 'info.flac'))
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', self.files[0], '-metadata', 'title=Night Drive',
+                        '-metadata', 'artist=Llama', '-metadata', 'album=Side A', '-metadata', 'track=3/9',
+                        '-metadata', 'date=1997', '-metadata', 'REPLAYGAIN_TRACK_GAIN=-6.20 dB',
+                        tagged], check=True)
+        info = read_file_info(tagged)
+        fields = {label: value for _section, rows in info['sections'] for label, value in rows}
+        self.assertEqual([section for section, _rows in info['sections']], ['Track', 'Audio', 'File'])
+        self.assertEqual(fields['Title'], 'Night Drive')
+        self.assertEqual(fields['Album'], 'Side A')
+        self.assertEqual(fields['Track'], '3/9')
+        self.assertEqual(fields['Year'], '1997')
+        self.assertEqual(fields['Track gain'], '−6.20 dB')
+        self.assertEqual(fields['Sample rate'], '16 kHz')
+        self.assertEqual(fields['Channels'], 'Mono')
+        self.assertEqual(fields['Length'], '0:01')
+        self.assertIn('FLAC', fields['Format'])
+        self.assertEqual(fields['Location'], tagged)
+        self.assertRegex(fields['Size'], r'^\d+(\.\d)? KB$')
+        missing = read_file_info(str(Path(self.directory.name, 'gone.mp3')))
+        self.assertEqual(missing['sections'][-1][1][-1], ('Status', 'File not found'))
+
+    def test_alt_3_opens_file_info_for_the_selection(self):
+        a = self.app
+        a._add_paths(self.files)
+        a._select_row(1)
+        self.assertTrue(self.press(Gdk.KEY_3, Gdk.ModifierType.MOD1_MASK))
+        dialog = a._file_info_dialog
+        self.assertIn('1.wav', dialog.get_title())
+        self.wait_for(lambda: dialog.fields.get('Sample rate'))
+        self.assertEqual(dialog.fields['Sample rate'].get_text(), '16 kHz')
+        dialog.response(Gtk.ResponseType.CLOSE)
+        self.pump(.02)
+        self.assertIsNone(a._file_info_dialog)
+        self.assertFalse(self.press(Gdk.KEY_3))
 
     def test_sort_is_one_undoable_edit_keeping_playback_and_queue(self):
         a = self.app

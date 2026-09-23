@@ -96,7 +96,8 @@ Screenshots use demonstration track labels and generated test audio.
 - Keyboard shortcuts: Winamp's `Z` `X` `C` `V` `B` (previous · play · pause ·
   stop · next) · `Space` play/pause · `←/→` seek ±5s · `↑/↓` volume ·
   `S` shuffle · `R` repeat · `J` jump to file · `Ctrl+J` jump to time ·
-  `Ctrl+T` elapsed/remaining · `Ctrl+O` add files · `Ctrl+L` open URL ·
+  `Ctrl+T` elapsed/remaining · `Ctrl+D` double size · `Alt+3` file info ·
+  `Ctrl+O` add files · `Ctrl+L` open URL ·
   `Del` remove from playlist
 
 ## Running
