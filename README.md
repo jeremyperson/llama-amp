@@ -57,6 +57,8 @@ install and wear it, or pick **Find skins** to browse the
 skin is an original design. The windows dock under each other (drag one away
 to float it), double-click a title bar to shade, and Ctrl+D doubles them.
 
+[Classic mode with the built-in skin](screenshots/llama-amp-classic.png)
+
 [Classic Silver](screenshots/llama-amp-silver.png) ·
 [Amber](screenshots/llama-amp-amber.png) ·
 [Windowshade](screenshots/llama-amp-windowshade.png)
