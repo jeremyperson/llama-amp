@@ -232,6 +232,19 @@ class PlayerTests(unittest.TestCase):
         self.assertEqual(a.current_index, 3)
         self.assertTrue(a.is_playing)
 
+    def test_own_stream_start_is_not_a_duplicate_handoff(self):
+        # A short file can reach about-to-finish before its own stream-start is
+        # dispatched; when the next entry is the same file, the URIs match.
+        a = self.app
+        a._add_paths([self.files[0], self.files[0]])
+        keys = list(a.entry_ids)
+        a._play_index(0)
+        a._on_about_to_finish(a.player)
+        self.pump(.05)
+        self.assertEqual(a.order.current, keys[0])
+        self.assertEqual(a.current_index, 0)
+        self.assertEqual(a._gapless_next[0], keys[1])
+
     def test_clear_and_undo_do_not_autoplay(self):
         a = self.app
         a._add_paths(self.files)

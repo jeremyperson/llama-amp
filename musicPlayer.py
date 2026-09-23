@@ -1307,6 +1307,12 @@ class MusicPlayer(Gtk.Window):
 
     def on_bus_stream_start(self, bus, message):
         """Gapless handoff commit: the prerolled track is now the live stream."""
+        if self._awaiting_own_start:
+            # The bus was flushed on load, so the first start is the loaded
+            # track's own. A short file can arm the handoff before this start is
+            # dispatched, and a duplicate next entry has the same URI.
+            self._awaiting_own_start = False
+            return
         if self._gapless_next is None:
             return  # ordinary load_song start
         key, path, uri, generation = self._gapless_next
@@ -1780,6 +1786,7 @@ class MusicPlayer(Gtk.Window):
         self._playlist_name = pn if isinstance(pn, str) and pn else None
         self.gapless = cfg.get("gapless", True) is not False
         self._gapless_next = None   # (index, path, uri) preroll set by about-to-finish
+        self._awaiting_own_start = False  # the next stream-start belongs to load_song
         self.preamp_value = self._cfg(cfg, "preamp", float, 0.5, 0.0, 1.0)
         self.eq_enabled = cfg.get("eq_enabled", True) is not False
         self._time_remaining = cfg.get("time_remaining") is True
@@ -4154,6 +4161,7 @@ class MusicPlayer(Gtk.Window):
                 bus = self.player.get_bus()
                 bus.set_flushing(True)
                 bus.set_flushing(False)
+                self._awaiting_own_start = True
                 self.player.set_property("uri", file_path)
                 self.current_song = file_path
                 self._loaded_uri = file_path
@@ -4184,6 +4192,7 @@ class MusicPlayer(Gtk.Window):
             bus = self.player.get_bus()
             bus.set_flushing(True)
             bus.set_flushing(False)
+            self._awaiting_own_start = True
             self.player.set_property("uri", uri)
             self.current_song = file_path
             self._loaded_uri = uri
