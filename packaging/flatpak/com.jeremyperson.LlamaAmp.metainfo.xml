@@ -34,7 +34,7 @@
 
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/jeremyperson/llama-amp/v1.4/screenshots/llama-amp.png</image>
+      <image>https://raw.githubusercontent.com/jeremyperson/llama-amp/v1.5/screenshots/llama-amp.png</image>
       <caption>Main window: LCD panel, spectrum analyzer, equalizer, and playlist</caption>
     </screenshot>
   </screenshots>
@@ -67,6 +67,14 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="1.5" date="2026-09-22">
+      <description>
+        <p>Classic interface rework: a dedicated spectrum analyzer with peak caps,
+        Llama Green, Classic Silver and Amber themes, collapsible and detachable
+        equalizer and playlist panels, windowshade mode, playlist Undo, and
+        improved queue and shuffle behavior.</p>
+      </description>
+    </release>
     <release version="1.4" date="2026-08-03">
       <description>
         <p>Flatpak support: store-managed updates (the in-app update checker

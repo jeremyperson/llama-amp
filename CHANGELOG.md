@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5 — 2026-09-22
 
 - Inset LLAMA AMP wordmark with a recessed badge sourced from the application
   version. Larger now-playing title, separate Volume/Balance groups, shorter EQ,

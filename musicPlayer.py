@@ -26,7 +26,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 # Application version
-APP_VERSION = "1.4"
+APP_VERSION = "1.5"
 
 # Application name (Winamp-inspired, but an original name — "Winamp" is a trademark)
 APP_NAME = "Llama Amp"
