@@ -6,7 +6,7 @@ import re
 # Directory containing musicPlayer.py: portable checkout or installed copy
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Application version
-APP_VERSION = "1.5"
+APP_VERSION = "1.6"
 # Application name (Winamp-inspired, but an original name — "Winamp" is a trademark)
 APP_NAME = "Llama Amp"
 # Default display text

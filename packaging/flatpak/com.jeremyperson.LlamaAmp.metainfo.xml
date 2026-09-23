@@ -34,7 +34,7 @@
 
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/jeremyperson/llama-amp/v1.5/screenshots/llama-amp.png</image>
+      <image>https://raw.githubusercontent.com/jeremyperson/llama-amp/v1.6/screenshots/llama-amp.png</image>
       <caption>Main window: LCD panel, spectrum analyzer, equalizer, and playlist</caption>
     </screenshot>
   </screenshots>
@@ -67,6 +67,13 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="1.6" date="2026-09-22">
+      <description>
+        <p>Classic mode with real Winamp 2 skins, an oscilloscope, double size,
+        crossfade, playlist sorting, a File Info window and Winamp's keyboard
+        shortcuts, plus fixes for seeking near the end of a track.</p>
+      </description>
+    </release>
     <release version="1.5" date="2026-09-22">
       <description>
         <p>Classic interface rework: a dedicated spectrum analyzer with peak caps,

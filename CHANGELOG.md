@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.6 — 2026-09-22
 
 - Classic mode with real Winamp 2 skins (Settings → Skin): the main window,
   equalizer and playlist editor drawn from any `.wsz` skin, including shaped
