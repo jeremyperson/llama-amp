@@ -4,6 +4,7 @@ import math
 from gi.repository import GLib, Gdk, Gst, Gtk
 
 from ..constants import APP_NAME, APP_VERSION, IS_FLATPAK
+from ..playlist import SORT_KEYS
 from .themes import THEMES
 
 
@@ -73,11 +74,19 @@ class MenusMixin:
         menu.append(view)
 
     def _popup_actions(self, button, actions):
-        menu = Gtk.Menu()
-        for caption, callback in actions:
-            item = Gtk.MenuItem(label=caption)
-            item.connect('activate', callback)
-            menu.append(item)
+        """actions: (caption, callback) pairs; a list in place of the callback
+        becomes a submenu of further pairs."""
+        def build(pairs):
+            menu = Gtk.Menu()
+            for caption, callback in pairs:
+                item = Gtk.MenuItem(label=caption)
+                if isinstance(callback, list):
+                    item.set_submenu(build(callback))
+                else:
+                    item.connect('activate', callback)
+                menu.append(item)
+            return menu
+        menu = build(actions)
         menu.show_all()
         self._actions_menu = menu
         menu.popup_at_widget(button, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, None)
@@ -92,6 +101,8 @@ class MenusMixin:
                    ('Save playlist as…', self._save_playlist_as), ('Save playlist', self._save_playlist_named)]
         for name in self._saved_playlist_names():
             actions.append((f'Load: {name}', lambda _w, n=name: self._load_named_playlist(n)))
+        actions.append(('Sort', [(caption, lambda _w, k=key: self.sort_playlist(k))
+                                 for key, caption in SORT_KEYS.items()]))
         actions.extend([('Export M3U…', self.export_m3u), ('Remove missing files', self.remove_missing),
                         ('Clear playlist', self.clear_playlist)])
         menu = self._popup_actions(button, actions)

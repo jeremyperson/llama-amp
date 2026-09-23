@@ -1,5 +1,6 @@
 """Playlist entries, the edit/Undo protocol, M3U and named playlists."""
 import os
+import random
 import re
 import threading
 import urllib.parse
@@ -10,6 +11,57 @@ from contextlib import contextmanager
 from gi.repository import GLib, Gtk
 
 from .constants import DEFAULT_SONG_TEXT
+
+# Winamp's Sort menu plus artist/album/length; captions for the Playlist menu
+SORT_KEYS = {'title': 'By title', 'artist': 'By artist', 'album': 'By album',
+             'filename': 'By filename', 'path': 'By path and filename',
+             'length': 'By length', 'reverse': 'Reverse list', 'randomize': 'Randomize list'}
+
+
+def _natural(text):
+    """Case-insensitive key that orders "Track 2" before "Track 10"."""
+    return [int(part) if part.isdigit() else part.casefold() for part in re.split(r'(\d+)', text)]
+
+
+def sort_entries(entries, key, info, rng=random):
+    """Reorder (entry_id, path) pairs. info(path) returns known tags (title,
+    artist, album, disc, track, duration) or None. Sorts are stable, so
+    duplicates keep their relative order; missing values sort last."""
+    entries = list(entries)
+    if key == 'reverse':
+        return entries[::-1]
+    if key == 'randomize':
+        rng.shuffle(entries)
+        return entries
+
+    def title(path, tags):
+        return _natural(tags.get('title') or os.path.splitext(os.path.basename(path))[0])
+
+    def text(value):
+        return (0, _natural(value)) if value else (1, [])
+
+    def number(value):
+        return (0, value) if isinstance(value, (int, float)) and value > 0 else (1, 0)
+
+    def sort_key(entry):
+        path = entry[1]
+        tags = info(path) or {}
+        if key == 'title':
+            return title(path, tags)
+        if key in ('artist', 'album'):
+            order = [text(tags.get('album')), number(tags.get('disc')), number(tags.get('track'))]
+            if key == 'artist':
+                order.insert(0, text(tags.get('artist')))
+            # Untagged entries go last as a group, in title order
+            return (all(part[0] for part in order), order, title(path, tags))
+        if key == 'filename':
+            return _natural(os.path.basename(path))
+        if key == 'path':
+            return _natural(path)
+        if key == 'length':
+            return number(tags.get('duration'))
+        raise ValueError(key)
+    return sorted(entries, key=sort_key)
 
 
 class PlaylistMixin:
@@ -105,6 +157,8 @@ class PlaylistMixin:
         for row in self.playlist_store:
             reference = Gtk.TreeRowReference.new(self.playlist_store, row.path)
             self._title_rows.setdefault(row[0], []).append(reference)
+        self._playlist_tags = {path: tags for path, tags in self._playlist_tags.items()
+                               if path in self._title_rows}
         self._playlist_titles = {path: title for path, title in self._playlist_titles.items()
                                  if path in self._title_rows}
         self._play_next = self.order.queue
@@ -507,3 +561,24 @@ class PlaylistMixin:
             self.tasks.idle_add(self._check_missing_chunk, end)
         return False
 
+    def _sort_info(self, path):
+        tags = dict(self._playlist_tags.get(path) or {})
+        title = self._playlist_titles.get(path)
+        if title:
+            tags['title'] = title
+        duration = self._duration_seconds(path)
+        if duration:
+            tags['duration'] = duration
+        return tags
+
+    def sort_playlist(self, key):
+        """Sort, reverse or randomize the playlist as one undoable edit. The
+        playing entry, the queue and duplicate identities are kept."""
+        if len(self.playlist) < 2:
+            return
+        self._remember_playlist()
+        ordered = sort_entries(zip(self.entry_ids, self.playlist), key, self._sort_info)
+        self.entry_ids = [entry_id for entry_id, _ in ordered]
+        self.playlist = [path for _, path in ordered]
+        self._playlist_edited(rebuild=True)
+        self.show_drop_feedback(f"{SORT_KEYS[key]} — Ctrl+Z to undo")

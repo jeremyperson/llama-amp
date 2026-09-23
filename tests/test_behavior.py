@@ -1,4 +1,5 @@
 import os
+import random
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +10,7 @@ import struct
 
 from llamaamp.analyzer import AnalyzerState, ScopeState, decode_pcm
 from llamaamp.order import PlaybackOrder
+from llamaamp.playlist import SORT_KEYS, sort_entries
 from llamaamp.ui.menus import parse_clock
 from llamaamp.settings import SCHEMA, SettingsStore, dump_settings, load_settings
 from llamaamp.constants import (SHUFFLE_OFF, SHUFFLE_TRACKS, SHUFFLE_ALBUMS,
@@ -204,6 +206,45 @@ class ClockParseTests(unittest.TestCase):
     def test_rejects_malformed_times(self):
         for text in ['', 'abc', '-5', '1:-3', '1:75', '1:2:3:4', ':30', '1:', 'nan', 'inf']:
             self.assertIsNone(parse_clock(text), text)
+
+
+
+class SortTests(unittest.TestCase):
+    INFO = {
+        '/m/b/10 - Ten.flac': dict(title='Ten', artist='Beta', album='Two', track=10, duration=200),
+        '/m/b/2 - Two.flac': dict(title='two', artist='Beta', album='Two', track=2, duration=100),
+        '/m/a/1.flac': dict(title='Alpha', artist='alpha', album='One', disc=2, track=1),
+        '/m/a/9.flac': dict(title='Zulu', artist='alpha', album='One', disc=1, track=9, duration=50),
+        '/m/untagged.mp3': {},
+    }
+
+    def order(self, key, entries=None, rng=None):
+        entries = entries or [(path, path) for path in self.INFO]
+        return [path for path, _ in sort_entries(entries, key, self.INFO.get, rng=rng)]
+
+    def test_title_uses_natural_case_insensitive_order_with_filename_fallback(self):
+        self.assertEqual(self.order('title'), ['/m/a/1.flac', '/m/b/10 - Ten.flac', '/m/b/2 - Two.flac',
+                                               '/m/untagged.mp3', '/m/a/9.flac'])
+
+    def test_artist_and_album_group_by_disc_and_track_with_untagged_last(self):
+        expected = ['/m/a/9.flac', '/m/a/1.flac', '/m/b/2 - Two.flac', '/m/b/10 - Ten.flac',
+                    '/m/untagged.mp3']
+        self.assertEqual(self.order('artist'), expected)
+        self.assertEqual(self.order('album'), expected)
+
+    def test_filename_path_and_length(self):
+        self.assertEqual(self.order('filename')[:3], ['/m/a/1.flac', '/m/b/2 - Two.flac', '/m/a/9.flac'])
+        self.assertEqual(self.order('path'), ['/m/a/1.flac', '/m/a/9.flac', '/m/b/2 - Two.flac',
+                                              '/m/b/10 - Ten.flac', '/m/untagged.mp3'])
+        self.assertEqual(self.order('length')[:3], ['/m/a/9.flac', '/m/b/2 - Two.flac', '/m/b/10 - Ten.flac'])
+
+    def test_reverse_randomize_and_duplicates_keep_every_entry(self):
+        entries = [('x1', '/m/a/1.flac'), ('x2', '/m/a/1.flac'), ('y', '/m/a/9.flac')]
+        self.assertEqual(sort_entries(entries, 'reverse', self.INFO.get), entries[::-1])
+        shuffled = sort_entries(entries, 'randomize', self.INFO.get, rng=random.Random(4))
+        self.assertEqual(sorted(shuffled), sorted(entries))
+        self.assertEqual([key for key, _ in sort_entries(entries, 'title', self.INFO.get)], ['x1', 'x2', 'y'])
+        self.assertIn('randomize', SORT_KEYS)
 
 
 if __name__ == '__main__':

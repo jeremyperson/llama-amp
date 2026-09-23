@@ -105,6 +105,7 @@ class MusicPlayer(EngineMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisM
         self._reordering = False        # a resync is scheduled (debounce)
         self._suppress_store = False     # programmatic store edits (don't resync)
         self._playlist_titles = {}  # path -> tagged title, or None after probing
+        self._playlist_tags = {}    # path -> artist/album/disc/track for sorting
         self._title_rows = {}       # path -> persistent GTK row references
         self._meta_cache = OrderedDict()         # path -> props dict, or False (probe failed)
         self._art_cache = OrderedDict()          # path -> embedded-art GdkPixbuf

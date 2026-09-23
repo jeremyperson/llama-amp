@@ -31,7 +31,8 @@ and Balance groups and a larger now-playing title.
 - Drag the visible grip in the lower-right corner to resize. The playlist grows
   with the window; detached panels have the same grip.
 - **Add ▾** contains files, folders and stream URLs. **Playlist ▾** contains
-  saved playlists, export, missing-file removal, Clear and Undo.
+  saved playlists, Sort (title, artist, album, filename, path, length, reverse,
+  randomize), export, missing-file removal, Clear and Undo.
 - **Ctrl+Z** undoes up to 20 playlist edits during the session. Restoring a cleared
   playlist does not automatically start playback. Queue markers show play order;
   **▶** means playing and **Ⅱ** means paused. Stopped tracks have no playback

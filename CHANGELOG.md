@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Playlist ▾ → Sort: by title, artist, album (disc and track order),
+  filename, path or length, plus Reverse and Randomize. Each is one Ctrl+Z
+  undo step and keeps the playing track, the queue and duplicate entries.
 - Winamp-style readouts on the display: inset kbps and kHz digits and
   mono/stereo indicator lights. The info line keeps the format, channel
   count beyond stereo, and shuffle/repeat state.

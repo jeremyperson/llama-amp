@@ -483,6 +483,47 @@ class PlayerTests(unittest.TestCase):
         self.assertEqual(a.analyzer.get_size_request(), (100, 62))
         self.assertEqual(a.album_art.get_pixbuf().get_width(), 72)
 
+    @unittest.skipUnless(shutil.which('ffmpeg'), 'ffmpeg generates tagged test audio')
+    def test_probe_reads_album_disc_and_track_tags(self):
+        a = self.app
+        tagged = str(Path(self.directory.name, 'tagged.flac'))
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', self.files[0], '-metadata', 'album=Side A',
+                        '-metadata', 'track=3/9', '-metadata', 'disc=2', '-metadata', 'artist=Llama',
+                        tagged], check=True)
+        a._add_paths([tagged])
+        self.wait_for(lambda: a._playlist_tags.get(tagged))
+        self.assertEqual(a._playlist_tags[tagged],
+                         {'artist': 'Llama', 'album': 'Side A', 'disc': 2, 'track': 3})
+
+    def test_sort_is_one_undoable_edit_keeping_playback_and_queue(self):
+        a = self.app
+        with patch.object(a._probe_queue, 'put'):
+            a._add_paths(self.files + [self.files[0]])
+        keys = list(a.entry_ids)
+        for path, album, track in ((self.files[0], 'B', 2), (self.files[1], 'B', 1), (self.files[2], 'A', 5)):
+            a._probe_done(path, {'title': f'Song {track}', 'album': album, 'track': track}, None)
+        a._play_index(3)
+        a._queue_paths([keys[1]])
+        a.sort_playlist('album')
+        self.assertEqual(a.entry_ids, [keys[2], keys[1], keys[0], keys[3]])
+        self.assertEqual([row[4] for row in a.playlist_store], a.entry_ids)
+        self.assertEqual(a.order.current, keys[3])
+        self.assertEqual(a.current_index, 3)
+        self.assertEqual(list(a.order.queue), [keys[1]])
+        self.assertTrue(a.is_playing)
+        a.undo_playlist()
+        self.assertEqual(a.entry_ids, keys)
+        self.assertEqual(a.current_index, 3)
+        a.sort_playlist('reverse')
+        self.assertEqual(a.entry_ids, keys[::-1])
+        a._playlist_popup(a.playlist_view)
+        items = {item.get_label(): item for item in a._actions_menu.get_children()}
+        sort_menu = items['Sort'].get_submenu()
+        self.assertEqual([item.get_label() for item in sort_menu.get_children()][:2], ['By title', 'By artist'])
+        a._actions_menu.popdown()
+        sort_menu.get_children()[-2].activate()        # Reverse list, through the menu
+        self.assertEqual(a.entry_ids, keys)
+
     def test_corrupt_config_values_fall_back_to_defaults(self):
         a = self.app
         a.destroy()

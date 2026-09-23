@@ -105,6 +105,13 @@ class MetadataMixin:
                     props['title'] = title
                 if ok2 and artist:
                     props['artist'] = artist
+                ok, album = tags.get_string(Gst.TAG_ALBUM)
+                if ok and album:
+                    props['album'] = album
+                for tag, name in ((Gst.TAG_TRACK_NUMBER, 'track'), (Gst.TAG_ALBUM_VOLUME_NUMBER, 'disc')):
+                    ok, number = tags.get_uint(tag)
+                    if ok and number:
+                        props[name] = number
                 ok, sample = tags.get_sample(Gst.TAG_IMAGE)
                 if not ok:
                     ok, sample = tags.get_sample(Gst.TAG_PREVIEW_IMAGE)
@@ -141,6 +148,9 @@ class MetadataMixin:
         self._probe_inflight.discard(file_path)
         self._cache_put(self._meta_cache, file_path, result)
         title = result.get('title') if isinstance(result, dict) else None
+        if isinstance(result, dict) and file_path in self._title_rows:
+            self._playlist_tags[file_path] = {key: result[key] for key in ('artist', 'album', 'disc', 'track')
+                                              if key in result}
         self._update_playlist_title(file_path, title)
         if isinstance(result, dict) and result.get('duration'):
             self._note_duration(file_path, result['duration'])
