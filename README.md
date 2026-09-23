@@ -4,7 +4,7 @@
 [![CI](https://github.com/jeremyperson/llama-amp/actions/workflows/ci.yml/badge.svg)](https://github.com/jeremyperson/llama-amp/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A Winamp-inspired music player for Linux with compact, tactile controls. Pure
+**[Website](https://jeremyperson.github.io/llama-amp/)** · A Winamp-inspired music player for Linux with compact, tactile controls. Pure
 Python/GTK3/GStreamer — no build step, no framework, just lines that whip.
 
 ![Llama Amp](screenshots/llama-amp.png)

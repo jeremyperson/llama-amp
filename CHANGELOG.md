@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.7 — 2026-09-23
 
 - Classic windows dock reliably under real window managers (GNOME tested):
   they start stacked, only a user drag undocks a window, and dropping one
