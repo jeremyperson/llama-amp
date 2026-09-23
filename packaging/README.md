@@ -1,6 +1,6 @@
 # Installing Llama Amp
 
-Llama Amp is a single-file Python/GTK3/GStreamer app. Two install paths are
+Llama Amp is a pure-Python GTK3/GStreamer app with no build step. Two install paths are
 provided, covering effectively every Linux desktop. (Windows/macOS: see the
 honest note at the bottom.)
 

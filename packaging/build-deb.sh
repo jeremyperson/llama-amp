@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION=$(python3 -c "import re; print(re.search(r'APP_VERSION = \"([^\"]+)\"', open('../musicPlayer.py').read()).group(1))")
+VERSION=$(python3 -c "import re; print(re.search(r'APP_VERSION = \"([^\"]+)\"', open('../llamaamp/constants.py').read()).group(1))")
 PKG="build/llama-amp_${VERSION}_all"
 
 rm -rf build
@@ -20,6 +20,7 @@ mkdir -p dist \
 
 # App
 cp ../musicPlayer.py "$PKG/usr/share/llama-amp/"
+(cd .. && find llamaamp -name '*.py' -exec install -Dm644 {} "packaging/$PKG/usr/share/llama-amp/{}" \;)
 cp ../llama-amp.svg "$PKG/usr/share/icons/hicolor/scalable/apps/llama-amp.svg"
 
 # Launcher

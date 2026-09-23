@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Syntax check
-        run: python3 -m py_compile musicPlayer.py
+        run: python3 -m compileall -q musicPlayer.py llamaamp
       - name: Byte-compile packaging scripts
         run: bash -n packaging/build-deb.sh
       - name: Install test dependencies

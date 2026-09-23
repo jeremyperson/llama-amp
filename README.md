@@ -4,8 +4,8 @@
 [![CI](https://github.com/jeremyperson/llama-amp/actions/workflows/ci.yml/badge.svg)](https://github.com/jeremyperson/llama-amp/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A Winamp-inspired music player for Linux with compact, tactile controls. Single-file
-Python/GTK3/GStreamer — no build step, no framework, ~5000 lines that whip.
+A Winamp-inspired music player for Linux with compact, tactile controls. Pure
+Python/GTK3/GStreamer — no build step, no framework, just lines that whip.
 
 ![Llama Amp](screenshots/llama-amp.png)
 
@@ -143,8 +143,8 @@ in-app when a new release is available (update straight from the ⚙ menu).
 
 Bug reports, feature ideas, and PRs are welcome — see
 [CONTRIBUTING.md](CONTRIBUTING.md) for the dev setup and the (few) ground
-rules. The short version: it's one file on a stock GTK3/GStreamer stack,
-and we'd like to keep it that way.
+rules. The short version: it runs on a stock GTK3/GStreamer stack with no
+build step, and we'd like to keep it that way.
 
 ## License
 

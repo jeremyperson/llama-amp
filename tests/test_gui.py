@@ -16,7 +16,10 @@ from unittest.mock import patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import musicPlayer as m
+from llamaamp.app import MusicPlayer
+from llamaamp.constants import REPEAT_ALL, REPEAT_ONE, SHUFFLE_TRACKS
+from llamaamp.ui.themes import THEMES
+from gi.repository import Gdk, GLib, Gst
 
 
 @unittest.skipUnless(os.environ.get('DISPLAY'), 'requires a display (use xvfb-run)')
@@ -35,12 +38,12 @@ class PlayerTests(unittest.TestCase):
         old_hook = sys.excepthook
         sys.excepthook = lambda *args: self.exceptions.append(args)
         self.addCleanup(setattr, sys, 'excepthook', old_hook)
-        mpris = patch.object(m.MusicPlayer, '_mpris_setup', lambda self: None)
+        mpris = patch.object(MusicPlayer, '_mpris_setup', lambda self: None)
         mpris.start()
         self.addCleanup(mpris.stop)
-        self.app = m.MusicPlayer()
+        self.app = MusicPlayer()
         self.addCleanup(self.close_app)
-        sink = m.Gst.ElementFactory.make('fakesink')
+        sink = Gst.ElementFactory.make('fakesink')
         sink.set_property('sync', True)
         self.app.player.set_property('audio-sink', sink)
         self.app.show_all()
@@ -69,7 +72,7 @@ class PlayerTests(unittest.TestCase):
 
     def pump(self, duration=.05):
         deadline = time.monotonic() + duration
-        context = m.GLib.MainContext.default()
+        context = GLib.MainContext.default()
         while time.monotonic() < deadline:
             while context.pending():
                 context.iteration(False)
@@ -106,7 +109,7 @@ class PlayerTests(unittest.TestCase):
         a.toggle_play_pause(None)
         self.assertEqual(a._mpris_status(), 'Paused')
         self.assertEqual(a.playlist_store[0][5], 'Ⅱ')
-        a._pending_seek_ns = 400 * m.Gst.MSECOND
+        a._pending_seek_ns = 400 * Gst.MSECOND
         a.stop_song(None)
         self.assertEqual(a._mpris_status(), 'Stopped')
         self.assertEqual(a.playlist_store[0][5], '')
@@ -123,7 +126,7 @@ class PlayerTests(unittest.TestCase):
         a._add_paths(self.files)
         a._play_index(1)
         a.destroy()
-        self.app = a = m.MusicPlayer()
+        self.app = a = MusicPlayer()
         a.show_all()
         self.pump(.05)
         self.assertEqual(a.current_song, self.files[1])
@@ -213,9 +216,9 @@ class PlayerTests(unittest.TestCase):
             def return_dbus_error(self, name, message):
                 raise AssertionError(message)
         a._mpris_method_call(None, None, None, 'org.mpris.MediaPlayer2.Player',
-                            'Next', m.GLib.Variant('()', ()), Invocation())
+                            'Next', GLib.Variant('()', ()), Invocation())
         self.assertEqual(a.current_index, 2)
-        a._mpris_set_prop(None, None, None, None, 'LoopStatus', m.GLib.Variant('s', 'Track'))
+        a._mpris_set_prop(None, None, None, None, 'LoopStatus', GLib.Variant('s', 'Track'))
         self.assertIsNone(a._next_snapshot)
 
     def test_duplicate_reorder_and_undo(self):
@@ -289,7 +292,7 @@ class PlayerTests(unittest.TestCase):
         a.panels.collapse('playlist')
         self.assertFalse(a.panels.items['playlist']['body'].get_visible())
         a._reset_layout()
-        for theme in m.THEMES:
+        for theme in THEMES:
             a._set_appearance('theme', theme)
             self.pump(.01)
         a._set_appearance('show_art', False)
@@ -358,7 +361,7 @@ class PlayerTests(unittest.TestCase):
             'panels': {'eq': {'size': None, 'attached': False, 'position': ['bad', 1]},
                        'playlist': 'bad'}, 'eq_values': [.4] * 10,
         }))
-        self.app = a = m.MusicPlayer()
+        self.app = a = MusicPlayer()
         a.show_all()
         self.pump(.08)
         self.assertEqual(a.config['theme'], 'green')
@@ -370,7 +373,7 @@ class PlayerTests(unittest.TestCase):
         a.toggle_windowshade()
         self.pump(.04)
         a.destroy()
-        self.app = a = m.MusicPlayer()
+        self.app = a = MusicPlayer()
         a.show_all()
         self.pump(.1)
         self.assertTrue(a._windowshade)
@@ -392,12 +395,12 @@ class PlayerTests(unittest.TestCase):
         a.toggle_direct_mode()
         self.assertFalse(a.spectrum.get_property('post-messages'))
         a.playlist_view.grab_focus()
-        event = m.Gdk.Event.new(m.Gdk.EventType.KEY_PRESS)
-        event.keyval = m.Gdk.KEY_Down
-        event.state = m.Gdk.ModifierType(0)
+        event = Gdk.Event.new(Gdk.EventType.KEY_PRESS)
+        event.keyval = Gdk.KEY_Down
+        event.state = Gdk.ModifierType(0)
         self.assertFalse(a.on_window_key_press(a, event))
-        event.keyval = m.Gdk.KEY_z
-        event.state = m.Gdk.ModifierType.CONTROL_MASK
+        event.keyval = Gdk.KEY_z
+        event.state = Gdk.ModifierType.CONTROL_MASK
         self.assertTrue(a.on_window_key_press(a, event))
         self.assertFalse(a.playlist)
 
@@ -420,8 +423,8 @@ class PlayerTests(unittest.TestCase):
         window = a.panels.items['eq']['window']
         window.move(20, 20 + a.get_size()[1] + 6)
         self.pump(.03)
-        event = m.Gdk.Event.new(m.Gdk.EventType.BUTTON_PRESS)
-        event.state = m.Gdk.ModifierType(0)
+        event = Gdk.Event.new(Gdk.EventType.BUTTON_PRESS)
+        event.state = Gdk.ModifierType(0)
         a.panels.start_drag(window, event)
         a.panels._settle()
         self.pump(.02)
@@ -432,7 +435,7 @@ class PlayerTests(unittest.TestCase):
         a.move(40, 40)
         self.pump(.04)
         self.assertEqual(tuple(window.get_position()), (origin[0] + 20, origin[1] + 20))
-        event.state = m.Gdk.ModifierType.MOD1_MASK
+        event.state = Gdk.ModifierType.MOD1_MASK
         a.panels.start_drag(window, event)
         self.assertIsNone(a.panels.items['eq']['snap_to'])
 
@@ -442,15 +445,15 @@ class PlayerTests(unittest.TestCase):
         for path in invalid:
             Path(path).write_bytes(b'not an audio file')
         a._add_paths(invalid)
-        a.shuffle = m.SHUFFLE_TRACKS
-        a.repeat_mode = m.REPEAT_ALL
+        a.shuffle = SHUFFLE_TRACKS
+        a.repeat_mode = REPEAT_ALL
         a._play_index(0)
         self.pump(.2)
         self.assertFalse(a.is_playing)
         self.assertEqual(len(a.order.failed), 2)
         a._add_paths(self.files)
         a._play_index(2)
-        a.repeat_mode = m.REPEAT_ONE
+        a.repeat_mode = REPEAT_ONE
         a._set_sleep('track')
         self.assertIsNone(a._next_snapshot)
         a.advance_track(auto=True)
@@ -482,7 +485,7 @@ class PlayerTests(unittest.TestCase):
             subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', self.files[0], target], check=True)
             a._add_paths([target])
             a._play_index(len(a.playlist) - 1)
-            self.wait_for(lambda: a.player.get_state(0)[1] == m.Gst.State.PLAYING)
+            self.wait_for(lambda: a.player.get_state(0)[1] == Gst.State.PLAYING)
         class QuietHandler(SimpleHTTPRequestHandler):
             def log_message(self, *_args):
                 pass
@@ -493,12 +496,12 @@ class PlayerTests(unittest.TestCase):
         url = f'http://127.0.0.1:{server.server_port}/encoded.mp3'
         a._add_paths([url])
         a._play_index(len(a.playlist) - 1)
-        self.wait_for(lambda: a.player.get_state(0)[1] == m.Gst.State.PLAYING)
+        self.wait_for(lambda: a.player.get_state(0)[1] == Gst.State.PLAYING)
         self.assertFalse(a.position_scale.get_sensitive())
         a._pipeline_live = False
-        a.on_bus_buffering(None, m.Gst.Message.new_buffering(a.player, 25))
+        a.on_bus_buffering(None, Gst.Message.new_buffering(a.player, 25))
         self.assertTrue(a._buffering)
-        a.on_bus_buffering(None, m.Gst.Message.new_buffering(a.player, 100))
+        a.on_bus_buffering(None, Gst.Message.new_buffering(a.player, 100))
         self.assertFalse(a._buffering)
         self.assertTrue(a.is_playing)
 

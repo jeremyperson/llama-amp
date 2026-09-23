@@ -5,9 +5,11 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from musicPlayer import (PlaybackOrder, AnalyzerState, SettingsStore,
-                         SHUFFLE_OFF, SHUFFLE_TRACKS, SHUFFLE_ALBUMS,
-                         REPEAT_OFF, REPEAT_ONE, REPEAT_ALL)
+from llamaamp.analyzer import AnalyzerState
+from llamaamp.order import PlaybackOrder
+from llamaamp.settings import SettingsStore
+from llamaamp.constants import (SHUFFLE_OFF, SHUFFLE_TRACKS, SHUFFLE_ALBUMS,
+                                REPEAT_OFF, REPEAT_ONE, REPEAT_ALL)
 
 
 class OrderTests(unittest.TestCase):

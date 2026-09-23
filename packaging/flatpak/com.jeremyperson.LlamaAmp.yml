@@ -45,6 +45,7 @@ modules:
     buildsystem: simple
     build-commands:
       - install -Dm644 musicPlayer.py /app/share/llama-amp/musicPlayer.py
+      - find llamaamp -name '*.py' -exec install -Dm644 {} /app/share/llama-amp/{} \;
       # Beside the script (tray/notification/placeholder lookups) and in
       # hicolor under the app-id (shell/app grid)
       - install -Dm644 llama-amp.svg /app/share/llama-amp/llama-amp.svg

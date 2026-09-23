@@ -1,8 +1,8 @@
 # Contributing to Llama Amp
 
-Thanks for wanting to help! Llama Amp is deliberately a **single-file**
-Python/GTK3/GStreamer app — that constraint is a feature. Please keep it in
-mind when proposing changes.
+Thanks for wanting to help! Llama Amp is deliberately a plain
+Python/GTK3/GStreamer app with no build step and no framework — that
+constraint is a feature. Please keep it in mind when proposing changes.
 
 ## Getting a dev setup
 
@@ -20,21 +20,25 @@ edit, relaunch, done.
 
 ## Ground rules
 
-- **One file.** App code goes in `musicPlayer.py`. If your change seems to
-  need a second module, open an issue first so we can talk about it.
+- **Where code lives.** `musicPlayer.py` is only a launcher; the app is the
+  `llamaamp/` package. `MusicPlayer` (`app.py`) is composed of mixins, one per
+  concern: `engine` (pipeline, DSP, gapless, transport), `playlist`,
+  `metadata`, `config`, `mpris`, `desktop` (tray, notifications), `scrobble`,
+  `updates`, `analyzer`, and `ui/` (window, controls, menus, playlist view,
+  panels, themes). Logic that doesn't need GTK (`order.py`, `AnalyzerState`)
+  stays GTK-free so it can be unit tested directly.
 - **No new runtime dependencies** without prior discussion — the app runs on
   a stock GNOME/GTK3/GStreamer stack on purpose (it's what makes the .deb
   and Flatpak trivially installable).
 - **UI threads**: GTK calls only on the main loop. Background work uses a
   worker thread + `GLib.idle_add` (see the metadata probe queue and the
   update checker for the pattern).
-- **Style**: match the surrounding code. Section banners
-  (`# ==================== X ====================`) group related methods;
-  keep methods small and comment the *why*, not the *what*.
+- **Style**: match the surrounding code; keep methods small and comment
+  the *why*, not the *what*.
 
 ## Before you open a PR
 
-1. `python3 -m py_compile musicPlayer.py`, then
+1. `python3 -m compileall -q musicPlayer.py llamaamp`, then
    `xvfb-run -a /usr/bin/python3 -m unittest discover -s tests -v`.
    Tests use temporary data directories and silent GStreamer output;
    `ffmpeg` generates MP3/FLAC fixtures. CI installs these test tools.
@@ -57,7 +61,7 @@ logging that is usually the fastest route to a diagnosis.
 
 ## Releases (maintainer notes)
 
-`APP_VERSION` in `musicPlayer.py` is the single source of truth — the .deb
+`APP_VERSION` in `llamaamp/constants.py` is the single source of truth — the .deb
 build stamps itself from it. Tag `vX.Y`, build with
 `packaging/build-deb.sh`, attach the .deb to the GitHub release; the
 Flathub package updates from the pinned tag in its manifest.
