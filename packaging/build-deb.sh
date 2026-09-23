@@ -80,6 +80,8 @@ Llama Amp — © 2026 Jeremy Person
 Bundled fonts: DSEG7 Classic (© keshikan) and Orbitron (© The Orbitron
 Project Authors), both under the SIL Open Font License 1.1 — see
 DSEG-LICENSE.txt and Orbitron-OFL.txt in this directory.
+Winamp 2 skin sprite coordinates (llamaamp/skin/sprites.py) are derived
+from Webamp, © 2015 Jordan Eldredge, MIT License (full text in that file).
 EOF
 
 # Control

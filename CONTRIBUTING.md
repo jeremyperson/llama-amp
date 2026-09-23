@@ -68,6 +68,11 @@ logging that is usually the fastest route to a diagnosis.
 ## Releases (maintainer notes)
 
 `APP_VERSION` in `llamaamp/constants.py` is the single source of truth — the .deb
-build stamps itself from it. Tag `vX.Y`, build with
-`packaging/build-deb.sh`, attach the .deb to the GitHub release; the
-Flathub package updates from the pinned tag in its manifest.
+build stamps itself from it. Bump it, move the CHANGELOG's "Unreleased"
+entries under the new version, commit, then push a `vX.Y` tag: the Release
+workflow tests, builds the .deb from a clean checkout and publishes the
+GitHub release with the CHANGELOG section as notes (it refuses a tag that
+doesn't match `APP_VERSION`). Then, locally, fetch that .deb
+(`gh release download vX.Y -p '*.deb' -D packaging/dist`) and run
+`packaging/update-apt-repo.sh`, which needs the signing key. Finally pin the
+Flatpak manifest to the new tag and commit.
