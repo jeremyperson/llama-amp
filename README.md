@@ -91,9 +91,11 @@ Screenshots use demonstration track labels and generated test audio.
   one-click install from the ⚙ menu (installed copies download the new .deb
   and hand it to the system installer; opt out via
   ⚙ → "Check for Updates on Startup")
-- Keyboard shortcuts: `Space` play/pause · `←/→` seek ±5s · `↑/↓` volume ·
-  `S` shuffle · `R` repeat · `J` jump-to-file · `Ctrl+O` add files ·
-  `Ctrl+L` open URL · `Del` remove from playlist
+- Keyboard shortcuts: Winamp's `Z` `X` `C` `V` `B` (previous · play · pause ·
+  stop · next) · `Space` play/pause · `←/→` seek ±5s · `↑/↓` volume ·
+  `S` shuffle · `R` repeat · `J` jump to file · `Ctrl+J` jump to time ·
+  `Ctrl+T` elapsed/remaining · `Ctrl+O` add files · `Ctrl+L` open URL ·
+  `Del` remove from playlist
 
 ## Running
 

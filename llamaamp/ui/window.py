@@ -4,8 +4,8 @@ import math
 from gi.repository import Gdk, Gtk, Pango
 
 from ..constants import APP_VERSION, DEFAULT_SONG_TEXT, URI_TARGET_INFO, WINDOW_H, WINDOW_W
-from ..ui.panels import PanelManager
-from ..ui.themes import THEMES
+from .panels import PanelManager
+from .themes import THEMES
 
 
 class WindowMixin:

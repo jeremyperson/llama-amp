@@ -201,8 +201,10 @@ class MusicPlayer(EngineMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisM
                 UPDATE_RECHECK_S, self._periodic_update_check))
 
     def on_window_key_press(self, widget, event):
-        """Global shortcuts: Space play/pause, arrows seek/volume, S shuffle,
-        R repeat, Ctrl+O add files. Delete/Backspace propagate to the playlist."""
+        """Global shortcuts: Space play/pause, Winamp's Z/X/C/V/B transport,
+        arrows seek/volume, S shuffle, R repeat, J jump to file, Ctrl+J jump to
+        time, Ctrl+T elapsed/remaining, Ctrl+O add files, Ctrl+L open URL.
+        Delete/Backspace propagate to the playlist."""
         # Typing in an entry (playlist search, dialogs) must never trigger
         # shortcuts — let the widget consume every key.
         focus = widget.get_focus() if isinstance(widget, Gtk.Window) else self.get_focus()
@@ -224,8 +226,21 @@ class MusicPlayer(EngineMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisM
         if ctrl and key in (Gdk.KEY_l, Gdk.KEY_L):
             self.open_url_dialog()
             return True
+        if ctrl and key in (Gdk.KEY_j, Gdk.KEY_J):
+            self.show_jump_to_time_dialog()
+            return True
+        if ctrl and key in (Gdk.KEY_t, Gdk.KEY_T):
+            self._toggle_time_mode()
+            return True
         if key == Gdk.KEY_space:
             self.toggle_play_pause(None)
+            return True
+        transport = {Gdk.KEY_z: self.previous_song, Gdk.KEY_x: self.play_from_start,
+                     Gdk.KEY_c: self.pause_toggle, Gdk.KEY_v: self.stop_song,
+                     Gdk.KEY_b: self.next_song}
+        action = transport.get(Gdk.keyval_to_lower(key))
+        if action is not None and not ctrl:
+            action(None)
             return True
         if key == Gdk.KEY_Left:
             self._seek_relative(-SEEK_STEP_SECONDS)

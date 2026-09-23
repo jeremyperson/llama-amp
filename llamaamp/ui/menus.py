@@ -1,8 +1,10 @@
 """Settings, appearance and playlist menus, and small dialogs."""
-from gi.repository import GLib, Gdk, Gtk
+import math
+
+from gi.repository import GLib, Gdk, Gst, Gtk
 
 from ..constants import APP_NAME, APP_VERSION, IS_FLATPAK
-from ..ui.themes import THEMES
+from .themes import THEMES
 
 
 class MenusMixin:
@@ -314,3 +316,53 @@ class MenusMixin:
         self._add_paths([url])
         self._play_index(len(self.playlist) - 1)
 
+    def _jump_to_time(self, text):
+        seconds = parse_clock(text)
+        return seconds is not None and self.seek_to(seconds)
+
+    def show_jump_to_time_dialog(self, *_args):
+        """Winamp's Jump to Time (Ctrl+J): accepts ss, m:ss or h:mm:ss."""
+        if (self.playback_state == 'Stopped' or not self.current_song
+                or self._is_stream_url(self.current_song)):
+            self.show_drop_feedback("Play a track to jump within it")
+            return
+        dialog = Gtk.Dialog(title="Jump to Time", transient_for=self, modal=True)
+        dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                           "_Jump", Gtk.ResponseType.OK)
+        dialog.set_default_response(Gtk.ResponseType.OK)
+        entry = Gtk.Entry()
+        entry.set_text(self._fmt_duration(self._current_position_ns() // Gst.SECOND))
+        entry.set_activates_default(True)
+        box = dialog.get_content_area()
+        box.set_margin_top(10); box.set_margin_bottom(10)
+        box.set_margin_start(10); box.set_margin_end(10)
+        box.set_spacing(6)
+        length = self._fmt_duration(self.duration // Gst.SECOND) if self.duration > 0 else "unknown"
+        box.add(Gtk.Label(label=f"Jump to (m:ss) — track length {length}:", xalign=0))
+        box.add(entry)
+        dialog.show_all()
+        while dialog.run() == Gtk.ResponseType.OK:
+            if self._jump_to_time(entry.get_text()):
+                break
+            entry.get_style_context().add_class('error')
+            entry.grab_focus()
+        dialog.destroy()
+
+
+def parse_clock(text):
+    """Seconds for 'ss', 'm:ss' or 'h:mm:ss' (the last field may have decimals),
+    or None when malformed."""
+    *whole, last = text.strip().split(':')
+    if len(whole) > 2 or not all(part.isdigit() for part in whole):
+        return None
+    try:
+        seconds = float(last)
+    except ValueError:
+        return None
+    if not math.isfinite(seconds) or seconds < 0 or (whole and seconds >= 60):
+        return None
+    if len(whole) == 2 and int(whole[1]) >= 60:
+        return None
+    for multiplier, part in zip((60, 3600), reversed(whole)):
+        seconds += int(part) * multiplier
+    return seconds

@@ -524,7 +524,10 @@ class EngineMixin:
         # Streaming thread: only a protected, precomputed decision is accessed.
         with self._gapless_lock:
             snapshot = self._next_snapshot
-            if snapshot is None or self._gapless_next is not None:
+            # A pending seek would switch playbin to the queued URI (or stall).
+            # After the seek the decoder drains again and re-emits this signal;
+            # if that happens before the seek is cleared, EOS advances instead.
+            if snapshot is None or self._gapless_next is not None or self._pending_seek_ns is not None:
                 return
             self._gapless_next = snapshot
             self._next_snapshot = None
@@ -619,6 +622,8 @@ class EngineMixin:
                 # background Discoverer chokes on)
                 self._note_duration(self.current_song, dur // Gst.SECOND)
             if self._pending_seek_ns is not None:
+                # Clear only after the seek: until then about-to-finish must not
+                # queue the next URI, or the flushing seek would stall on it.
                 self.player.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH, self._pending_seek_ns)
                 self._pending_seek_ns = None
 
@@ -789,7 +794,40 @@ class EngineMixin:
             dur = self.duration
         target = pos + int(seconds * Gst.SECOND)
         target = max(0, min(target, dur if dur > 0 else target))
-        self.player.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH, target)
+        self._seek_ns(target)
+
+    def seek_to(self, seconds):
+        """Seek to an absolute time, clamped to the track. False when nothing
+        seekable is loaded (stopped, or a live stream)."""
+        if (self.playback_state == 'Stopped' or not self.current_song
+                or self._is_stream_url(self.current_song)):
+            return False
+        ok, dur = self.player.query_duration(Gst.Format.TIME)
+        if not ok or dur <= 0:
+            dur = self.duration
+        target = max(0, int(seconds * Gst.SECOND))
+        if dur > 0:
+            target = min(target, dur)
+        self._seek_ns(target)
+        return True
+
+    def _seek_ns(self, target):
+        """Seek within the current track. Once about-to-finish has handed playbin
+        the next URI, a flushing seek switches to that track instead, so the
+        current entry is reloaded and the seek applied as it starts."""
+        with self._gapless_lock:
+            armed = self._gapless_next is not None
+        if armed:
+            was_playing = self.is_playing
+            self.load_song(self.current_index)
+            self._pending_seek_ns = target
+            self.position = target
+            if was_playing:
+                self._play_current()
+            else:
+                self.player.set_state(Gst.State.PAUSED)
+        else:
+            self.player.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH, target)
         self._mpris_notify_seeked(target)
 
     def _step_volume(self, delta):
@@ -826,6 +864,19 @@ class EngineMixin:
                     return  # No available songs found
 
             self._play_current()
+
+    def play_from_start(self, *_args):
+        """Winamp's Play (X): starts when stopped, resumes when paused and
+        restarts the track when already playing."""
+        if self.playback_state == 'Playing':
+            self.seek_to(0)
+        else:
+            self.toggle_play_pause(None)
+
+    def pause_toggle(self, *_args):
+        """Winamp's Pause (C): toggles pause; does nothing while stopped."""
+        if self.playback_state != 'Stopped':
+            self.toggle_play_pause(None)
 
     def find_and_load_next_available_song(self):
         """Find and load the next available (existing) song in the playlist"""

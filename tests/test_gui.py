@@ -377,6 +377,78 @@ class PlayerTests(unittest.TestCase):
         a.stop_song(None)
         self.wait_for(lambda: not a.scope_state.points)
 
+    def press(self, keyval, state=0):
+        event = Gdk.Event.new(Gdk.EventType.KEY_PRESS)
+        event.keyval = keyval
+        event.state = Gdk.ModifierType(state)
+        return self.app.on_window_key_press(self.app, event)
+
+    def test_seeking_after_handoff_is_armed_stays_on_the_track(self):
+        # Near the end of a track playbin already holds the next URI; a plain
+        # flushing seek would switch to it instead of rewinding.
+        a = self.app
+        a._add_paths(self.files)
+        a._play_index(0)
+        self.wait_for(lambda: a._current_position_ns() > 100 * Gst.MSECOND)
+        a._on_about_to_finish(a.player)
+        self.assertIsNotNone(a._gapless_next)
+        started = time.monotonic()
+        self.assertTrue(a.seek_to(.5))
+        self.wait_for(lambda: a._current_position_ns() >= 450 * Gst.MSECOND)
+        # The reload restarts at 0; only the seek can put playback ahead of the clock
+        ahead = a._current_position_ns() / Gst.SECOND - (time.monotonic() - started)
+        self.assertGreater(ahead, .3)
+        self.assertEqual(a.current_index, 0)
+        self.assertEqual(a.order.current, a.entry_ids[0])
+        self.assertTrue(a.is_playing)
+        self.wait_for(lambda: a.current_index == 1)      # the real handoff still happens
+
+    def test_winamp_transport_keys(self):
+        a = self.app
+        a._add_paths(self.files)
+        self.assertTrue(self.press(Gdk.KEY_c))            # C while stopped does nothing
+        self.assertEqual(a.playback_state, 'Stopped')
+        self.assertTrue(self.press(Gdk.KEY_x))            # X plays
+        self.assertEqual(a.playback_state, 'Playing')
+        self.wait_for(lambda: a._current_position_ns() > 200 * Gst.MSECOND)
+        self.assertTrue(self.press(Gdk.KEY_X))            # X while playing restarts
+        self.pump(.05)
+        self.assertLess(a._current_position_ns(), 200 * Gst.MSECOND)
+        self.assertEqual(a.playback_state, 'Playing')
+        self.assertTrue(self.press(Gdk.KEY_c))            # C pauses and resumes
+        self.assertEqual(a.playback_state, 'Paused')
+        self.assertTrue(self.press(Gdk.KEY_c))
+        self.assertEqual(a.playback_state, 'Playing')
+        self.assertTrue(self.press(Gdk.KEY_b))            # B next, Z previous
+        self.assertEqual(a.current_index, 1)
+        self.assertTrue(self.press(Gdk.KEY_z))
+        self.assertEqual(a.current_index, 0)
+        self.assertTrue(self.press(Gdk.KEY_v))            # V stops
+        self.assertEqual(a.playback_state, 'Stopped')
+        self.assertTrue(self.press(Gdk.KEY_x))            # X from stopped plays again
+        self.assertEqual(a.playback_state, 'Playing')
+        self.assertTrue(self.press(Gdk.KEY_z, Gdk.ModifierType.CONTROL_MASK))  # Ctrl+Z is Undo
+        self.assertFalse(a.playlist)
+
+    def test_ctrl_t_toggles_remaining_time(self):
+        a = self.app
+        self.assertFalse(a._time_remaining)
+        self.assertTrue(self.press(Gdk.KEY_t, Gdk.ModifierType.CONTROL_MASK))
+        self.assertTrue(a._time_remaining)
+        self.assertFalse(self.press(Gdk.KEY_t))           # plain T is not bound
+
+    def test_jump_to_time_seeks_within_the_track(self):
+        a = self.app
+        a._add_paths(self.files)
+        a._play_index(0)
+        self.wait_for(lambda: a.duration > 0)
+        self.assertTrue(a._jump_to_time('0:00.6'))
+        # A short fixture has already armed the handoff, so the seek reloads first
+        self.wait_for(lambda: a._current_position_ns() >= 550 * Gst.MSECOND)
+        self.assertEqual(a.current_index, 0)
+        self.assertTrue(a._jump_to_time('5:00'))        # clamped to the track length
+        self.assertFalse(a._jump_to_time('soon'))
+
     def test_corrupt_config_values_fall_back_to_defaults(self):
         a = self.app
         a.destroy()

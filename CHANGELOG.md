@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Winamp's keyboard transport: Z previous, X play (restarts when already
+  playing), C pause, V stop, B next. Ctrl+J jumps to a time (ss, m:ss or
+  h:mm:ss) and Ctrl+T toggles elapsed/remaining time.
+- Fixed: seeking in the last seconds of a track (arrow keys, the position
+  slider or media controls) could skip to the next track instead, and a
+  seek right after a track started could leave playback stuck paused.
 - Oscilloscope visualization. Click the analyzer to cycle spectrum,
   oscilloscope and off, or pick the mode in Settings → Visualization. The
   trace reads the audio without modifying it, so Direct Mode stays bit-exact;

@@ -128,9 +128,7 @@ class MprisMixin:
             elif method == "SetPosition":
                 trackid, pos_us = params.unpack()
                 if trackid == self._mpris_trackid():
-                    self.player.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH,
-                                            pos_us * 1000)
-                    self._mpris_notify_seeked(pos_us * 1000)
+                    self._seek_ns(pos_us * 1000)
             elif method == "OpenUri":
                 files = self._uris_to_audio_paths([params.unpack()[0]])
                 if files:

@@ -9,6 +9,7 @@ import struct
 
 from llamaamp.analyzer import AnalyzerState, ScopeState, decode_pcm
 from llamaamp.order import PlaybackOrder
+from llamaamp.ui.menus import parse_clock
 from llamaamp.settings import SCHEMA, SettingsStore, dump_settings, load_settings
 from llamaamp.constants import (SHUFFLE_OFF, SHUFFLE_TRACKS, SHUFFLE_ALBUMS,
                                 REPEAT_OFF, REPEAT_ONE, REPEAT_ALL)
@@ -191,6 +192,18 @@ class ScopeTests(unittest.TestCase):
         scope.feed_samples([100] * 200, 1, 32768.0, now=2.0)
         scope.tick(2.0, playing=False)
         self.assertEqual(scope.points, ())
+
+
+
+class ClockParseTests(unittest.TestCase):
+    def test_accepts_seconds_minutes_and_hours(self):
+        for text, seconds in [('90', 90), (' 1:30 ', 90), ('1:05', 65), ('01:02:03', 3723),
+                              ('2.5', 2.5), ('0:07.5', 7.5), ('125:00', 7500)]:
+            self.assertEqual(parse_clock(text), seconds, text)
+
+    def test_rejects_malformed_times(self):
+        for text in ['', 'abc', '-5', '1:-3', '1:75', '1:2:3:4', ':30', '1:', 'nan', 'inf']:
+            self.assertIsNone(parse_clock(text), text)
 
 
 if __name__ == '__main__':

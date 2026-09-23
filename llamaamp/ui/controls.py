@@ -20,7 +20,7 @@ from ..constants import (
     SHUFFLE_TRACKS,
     VOLUME_STEP,
 )
-from ..ui.themes import THEMES
+from .themes import THEMES
 
 
 class ControlsMixin:
@@ -547,9 +547,7 @@ class ControlsMixin:
         if not ok or duration <= 0:
             duration = self.duration
         if duration > 0:
-            seek_time = (position / 100.0) * duration
-            self.player.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH, seek_time)
-            self._mpris_notify_seeked(int(seek_time))
+            self._seek_ns(int((position / 100.0) * duration))
         self.seeking = False
 
     # Update methods
