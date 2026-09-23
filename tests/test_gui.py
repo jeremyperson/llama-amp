@@ -1,24 +1,24 @@
 """Run with xvfb-run -a /usr/bin/python3 -m unittest discover -s tests."""
+import gettext
 import json
 import os
+import re
+import shutil
 import struct
+import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
-import gettext
-import re
 import wave
 import zipfile
+from functools import partial
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from pathlib import Path
+from unittest.mock import patch
 
 import cairo
-import shutil
-import subprocess
-import threading
-from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
-from functools import partial
-from unittest.mock import patch
-from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # golden_scenes, run either way
@@ -732,6 +732,29 @@ class PlayerTests(unittest.TestCase):
         classic.eq.toggle_shade()                     # a 14px equalizer strip
         x, y = classic.main.get_position()
         self.wait_for(lambda: tuple(classic.playlist.get_position()) == (x, y + (116 + 14) * 2))
+
+    def test_only_user_drags_change_docking(self):
+        a = self.app
+        a.set_skin('builtin')
+        classic = a._classic
+        eq = classic.eq
+        self.pump(.2)
+        x, y = classic.main.get_position()
+        eq.move(0, 300)                              # the window manager placing/constraining it
+        self.pump(.2)
+        self.assertTrue(classic.docked['eq'])
+        classic.relayout()
+        self.wait_for(lambda: tuple(eq.get_position()) == (x, y + 116))
+        eq.move(x + 400, y + 150)                    # the user drops it far away
+        self.wait_for(lambda: tuple(eq.get_position()) == (x + 400, y + 150))
+        eq.on_move_finished()
+        self.wait_for(lambda: not classic.docked['eq'])
+        self.assertEqual(tuple(classic.playlist.get_position()), (x, y + 116))   # playlist moves up
+        eq.move(x + 4, y + 116 + 3)                  # ...and back, just off its slot
+        self.wait_for(lambda: tuple(eq.get_position()) == (x + 4, y + 119))
+        eq.on_move_finished()
+        self.wait_for(lambda: classic.docked['eq'] and tuple(eq.get_position()) == (x, y + 116))
+        self.wait_for(lambda: tuple(classic.playlist.get_position()) == (x, y + 232))
 
     def test_classic_windows_paint_every_state(self):
         a = self.app

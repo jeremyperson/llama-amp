@@ -21,6 +21,8 @@ class SkinnedWindow(Gtk.Window):
         self.dragging = None         # slider being dragged
         self.focused = False
         self.iconified = False
+        self.user_moving = False     # a window-manager move drag the user started
+        self.on_move_finished = None
         self.area = Gtk.DrawingArea()
         self.area.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK
                              | Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.SCROLL_MASK)
@@ -134,6 +136,7 @@ class SkinnedWindow(Gtk.Window):
         if name is None:
             if y < TITLE_HEIGHT or self.drag_anywhere():
                 self.begin_move_drag(event.button, int(event.x_root), int(event.y_root), event.time)
+                self._watch_move()
             return True
         self.pressed = name
         if self.is_slider(name):
@@ -169,6 +172,26 @@ class SkinnedWindow(Gtk.Window):
         if direction:
             self.scroll(direction)
         return True
+
+    def _watch_move(self):
+        """The window manager owns a move drag and GTK never sees its button
+        release, so poll the pointer to learn when the user lets go."""
+        if self.user_moving:
+            return
+        self.user_moving = True
+        pointer = self.get_display().get_default_seat().get_pointer()
+
+        def poll():
+            window = self.get_window()
+            if window is not None:
+                _window, _x, _y, mask = window.get_device_position(pointer)
+                if mask & Gdk.ModifierType.BUTTON1_MASK:
+                    return True
+            self.user_moving = False
+            if self.on_move_finished is not None:
+                self.on_move_finished()
+            return False
+        self.app.tasks.timeout_add(50, poll)
 
     # -- hooks ----------------------------------------------------------------
     def is_slider(self, name):

@@ -15,6 +15,7 @@ from ...i18n import _
 REFRESH_MS = 33          # the main window repaints at ~30 fps while playing
 IDLE_EVERY = 8           # ...and every 8th tick otherwise, like the other windows
 SNAP = 10                # docking distance, as in Winamp
+SETTLE_MS = 120          # after a drag, until the window manager's final position
 
 
 class ClassicMode:
@@ -35,7 +36,14 @@ class ClassicMode:
         self.main.connect('delete-event', lambda *_: (app.destroy(), True)[1])
         for name in ('eq', 'playlist'):
             window = getattr(self, name)
-            window.connect('configure-event', lambda *_args, n=name: self._moved(n))
+            # Part of the player, as in Winamp: one taskbar entry, minimized together
+            window.set_transient_for(self.main)
+            window.set_type_hint(Gdk.WindowTypeHint.UTILITY)
+            window.set_skip_taskbar_hint(True)
+            window.set_skip_pager_hint(True)
+            # Only a drag by the user changes docking; placement and constraints
+            # applied by the window manager must not undock a window.
+            window.on_move_finished = lambda n=name: self._moved(n)
             window.connect('delete-event', lambda *_args, n=name: (self.toggle_window(n), True)[1])
         self._timer = app.tasks.timeout_add(REFRESH_MS, self._tick)
 
@@ -88,19 +96,23 @@ class ClassicMode:
         for name in ('eq', 'playlist'):
             window = getattr(self, name)
             if window.get_visible() and self.docked[name]:
-                position = self._docked_position(name)
-                if tuple(window.get_position()) != position:
-                    window.move(*position)
+                # Always move: GTK's cached position can lag the window manager's
+                window.move(*self._docked_position(name))
         return False
 
     def _moved(self, name):
-        """Magnetic docking: close to its slot a window snaps in, else it floats."""
+        """After the user drags a window: close to its slot it snaps in,
+        otherwise it floats where it was dropped."""
+        # The window manager places the window a moment after the button is
+        # released; decide once that has landed.
+        self.app.tasks.timeout_add(SETTLE_MS, self._settle_moved, name)
+
+    def _settle_moved(self, name):
         window = getattr(self, name)
         x, y = window.get_position()
         expected = self._docked_position(name)
         self.docked[name] = abs(x - expected[0]) <= SNAP and abs(y - expected[1]) <= SNAP
-        if self.docked[name] and (x, y) != expected:
-            window.move(*expected)
+        self.relayout()           # snaps this window in and restacks the ones below it
         return False
 
     def snapshot(self):

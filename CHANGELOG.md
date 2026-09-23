@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Classic windows dock reliably under real window managers (GNOME tested):
+  they start stacked, only a user drag undocks a window, and dropping one
+  near its slot snaps it back precisely. The equalizer and playlist editor
+  no longer get their own taskbar entries and minimize with the player.
 - Ready for translation: every visible string goes through gettext, with
   proper plural forms. See CONTRIBUTING.md → Translating to add a language.
 - Fixed: after double size or shading, a docked classic window could overlap
