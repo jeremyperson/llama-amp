@@ -5,6 +5,7 @@ import re
 import time
 
 from ..constants import N_
+from ..paths import real_path
 
 # The artist facet groups compilations under their album artist
 ARTIST = "COALESCE(NULLIF(album_artist, ''), NULLIF(artist, ''))"
@@ -42,7 +43,7 @@ def _where(db, view, search, filters, upto=None):
             params['match'] = fts_query(search)
         else:
             clauses.append("(title LIKE :like OR artist LIKE :like OR album_artist LIKE :like "
-                           "OR album LIKE :like OR genre LIKE :like OR path LIKE :like)")
+                           "OR album LIKE :like OR genre LIKE :like OR search_path LIKE :like)")
             params['like'] = f'%{search.strip()}%'
     for facet in CASCADE:
         if facet == upto:
@@ -72,4 +73,4 @@ def tracks(db, view='all', search='', filters=None):
     where, params = _where(db, view, search, filters or {})
     _caption, _extra, order, limit = VIEWS[view]
     sql = f'SELECT * FROM tracks {where} ORDER BY {order}' + (f' LIMIT {limit}' if limit else '')
-    return db.execute(sql, params)
+    return [dict(row, path=real_path(row['path'])) for row in db.execute(sql, params)]

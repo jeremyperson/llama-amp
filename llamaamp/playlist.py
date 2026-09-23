@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from gi.repository import GLib, Gtk
 
 from .constants import AUDIO_EXTENSIONS
+from .paths import displayable, real_path, store_path
 from .i18n import N_, _, default_song_text, ngettext
 
 # Winamp's Sort menu plus artist/album/length; captions (translate with _()
@@ -132,7 +133,8 @@ class PlaylistMixin:
                 name = self._display_name(p)
                 display = (name if self._is_stream_url(p) or os.path.exists(p)
                            else missing_label(name))
-                self.playlist_store.append([p, display, len(self.playlist), self._duration_str(p), self.entry_ids[-1], ""])
+                self.playlist_store.append([store_path(p), display, len(self.playlist), self._duration_str(p),
+                                            self.entry_ids[-1], ""])
                 added += 1
         if not added:
             return 0
@@ -159,7 +161,7 @@ class PlaylistMixin:
         if not title:
             cached = self._meta_cache.get(path)
             title = cached.get('title') if isinstance(cached, dict) else None
-        return title if title else os.path.splitext(os.path.basename(path))[0]
+        return title if title else displayable(os.path.splitext(os.path.basename(path))[0])
 
     def _playable(self, path):
         """Can this playlist entry be played right now?"""
@@ -176,7 +178,7 @@ class PlaylistMixin:
         self._title_rows = {}
         for row in self.playlist_store:
             reference = Gtk.TreeRowReference.new(self.playlist_store, row.path)
-            self._title_rows.setdefault(row[0], []).append(reference)
+            self._title_rows.setdefault(real_path(row[0]), []).append(reference)
         self._playlist_tags = {path: tags for path, tags in self._playlist_tags.items()
                                if path in self._title_rows}
         self._playlist_titles = {path: title for path, title in self._playlist_titles.items()
@@ -201,7 +203,7 @@ class PlaylistMixin:
                     name = self._display_name(path)
                     if not self._playable(path):
                         name = _("{name} [MISSING]").format(name=name)
-                    self.playlist_store.append([path, name, i + 1, self._duration_str(path), key, ''])
+                    self.playlist_store.append([store_path(path), name, i + 1, self._duration_str(path), key, ''])
         if current in self.entry_ids:
             self.current_index = self.entry_ids.index(current)
         else:
@@ -254,7 +256,7 @@ class PlaylistMixin:
         base = os.path.dirname(os.path.abspath(m3u_path))
         entries = []
         try:
-            with open(m3u_path, 'r', encoding='utf-8', errors='replace') as f:
+            with open(m3u_path, 'r', encoding='utf-8', errors='surrogateescape') as f:
                 for line in f:
                     line = line.strip()
                     if not line or line.startswith('#'):
@@ -393,7 +395,7 @@ class PlaylistMixin:
             secs = self._duration_seconds(p) or -1
             lines.append(f"#EXTINF:{secs},{self._display_name(p)}")
             lines.append(p)
-        self._atomic_write(target, "\n".join(lines) + "\n")
+        self._atomic_write(target, ("\n".join(lines) + "\n").encode('utf-8', 'surrogateescape'), binary=True)
 
     def playlists_dir(self):
         d = os.path.join(self._data_dir(), "playlists")
@@ -516,7 +518,7 @@ class PlaylistMixin:
         if self._destroyed:
             return False
         self._remember_playlist()
-        self.playlist = [row[0] for row in self.playlist_store]
+        self.playlist = [real_path(row[0]) for row in self.playlist_store]
         self.entry_ids = [row[4] for row in self.playlist_store]
         self._playlist_edited(rebuild=False)
         return False
@@ -535,7 +537,9 @@ class PlaylistMixin:
     def save_playlist(self):
         """Save the current playlist to a file (atomically)"""
         try:
-            self._atomic_write(self.playlist_path(), "".join(f"{p}\n" for p in self.playlist))
+            # surrogateescape keeps paths that aren't valid UTF-8 byte-exact
+            data = "".join(f"{p}\n" for p in self.playlist).encode('utf-8', 'surrogateescape')
+            self._atomic_write(self.playlist_path(), data, binary=True)
         except Exception as e:
             print(f"Error saving playlist: {e}")
 
@@ -549,7 +553,7 @@ class PlaylistMixin:
             playlist_file = self.playlist_path()
             if not os.path.exists(playlist_file):
                 return
-            with open(playlist_file, 'r') as f:
+            with open(playlist_file, 'r', encoding='utf-8', errors='surrogateescape') as f:
                 lines = [line.strip() for line in f if line.strip()]
             if not lines:
                 return
@@ -559,7 +563,8 @@ class PlaylistMixin:
                     self.playlist.append(file_path)
                     self.entry_ids.append(uuid.uuid4().hex)
                     display_name = self._display_name(file_path)
-                    self.playlist_store.append([file_path, display_name, i + 1, self._duration_str(file_path), self.entry_ids[-1], ""])
+                    self.playlist_store.append([store_path(file_path), display_name, i + 1,
+                                                self._duration_str(file_path), self.entry_ids[-1], ""])
                 self.playlist_view.set_model(self.playlist_store)
 
             self._refresh_order()

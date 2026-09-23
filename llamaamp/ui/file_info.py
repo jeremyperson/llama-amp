@@ -6,13 +6,14 @@ from gi.repository import GLib, Gtk, Pango
 
 from ..fileinfo import read_file_info
 from ..i18n import _
+from ..paths import displayable, real_path
 
 
 class FileInfoMixin:
     def _file_info_target(self):
         """The selected playlist entry, else the current track."""
         model, paths = self.playlist_view.get_selection().get_selected_rows()
-        return model[paths[0]][0] if paths else self.current_song
+        return real_path(model[paths[0]][0]) if paths else self.current_song
 
     def show_file_info(self, *_args, path=None):
         path = path or self._file_info_target()
@@ -21,7 +22,7 @@ class FileInfoMixin:
             return
         if self._file_info_dialog is not None:
             self._file_info_dialog.destroy()
-        name = path if self._is_stream_url(path) else os.path.basename(path)
+        name = path if self._is_stream_url(path) else displayable(os.path.basename(path))
         dialog = Gtk.Dialog(title=_('File Info — {name}').format(name=name), transient_for=self)
         dialog.set_destroy_with_parent(True)
         dialog.add_button(_("_Close"), Gtk.ResponseType.CLOSE)

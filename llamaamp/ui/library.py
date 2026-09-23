@@ -9,6 +9,7 @@ from ..i18n import _, ngettext
 from ..library import queries
 from ..library.db import LibraryDB
 from ..library.scanner import Scanner
+from ..paths import displayable, real_path, store_path
 from ..playlist import added_feedback
 
 SCAN_DELAY_S = 4          # let startup finish before the incremental rescan
@@ -290,8 +291,8 @@ class LibraryWindow(Gtk.Window):
         for track in rows:
             number = f"{track['disc']}.{track['track']:02d}" if track['disc'] and track['disc'] > 1 and track['track'] \
                 else str(track['track'] or '')
-            title = track['title'] or os.path.splitext(os.path.basename(track['path']))[0]
-            insert(-1, columns, (track['path'], number, title, track['artist'] or '', track['album'] or '',
+            title = track['title'] or displayable(os.path.splitext(os.path.basename(track['path']))[0])
+            insert(-1, columns, (store_path(track['path']), number, title, track['artist'] or '', track['album'] or '',
                                  _clock(track['duration']), track['plays']))
         self.track_view.set_model(self.tracks)
         seconds = sum(track['duration'] or 0 for track in rows)
@@ -353,8 +354,8 @@ class LibraryWindow(Gtk.Window):
         """The selected tracks, else everything listed."""
         model, paths = self.track_view.get_selection().get_selected_rows()
         if paths:
-            return [model[path][0] for path in paths]
-        return [row[0] for row in self.tracks]
+            return [real_path(model[path][0]) for path in paths]
+        return [real_path(row[0]) for row in self.tracks]
 
     def play(self):
         self.app.library_play(self.chosen_paths())
@@ -366,7 +367,7 @@ class LibraryWindow(Gtk.Window):
         self.app.library_enqueue(self.chosen_paths(), play_next=True)
 
     def _track_activated(self, view, path, _column):
-        self.app.library_enqueue([view.get_model()[path][0]], play=True)
+        self.app.library_enqueue([real_path(view.get_model()[path][0])], play=True)
 
     def _track_press(self, view, event):
         if event.button != 3:
@@ -389,7 +390,7 @@ class LibraryWindow(Gtk.Window):
 
     def _drag_data_get(self, view, _context, data, _info, _time):
         model, paths = view.get_selection().get_selected_rows()
-        data.set_uris([GLib.filename_to_uri(model[path][0]) for path in paths])
+        data.set_uris([GLib.filename_to_uri(real_path(model[path][0])) for path in paths])
 
     # -- folders ----------------------------------------------------------------
     def add_folder(self):
@@ -422,12 +423,12 @@ class LibraryWindow(Gtk.Window):
         def reload():
             store.clear()
             for folder in self.app.library.folders():
-                store.append([folder])
+                store.append([store_path(folder)])
 
         def remove(_button):
             model, it = view.get_selection().get_selected()
             if it is not None:
-                self.app.library.remove_folder(model[it][0])
+                self.app.library.remove_folder(real_path(model[it][0]))
                 reload()
                 self.refresh()
                 self.update_status()

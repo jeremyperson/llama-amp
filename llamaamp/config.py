@@ -5,6 +5,7 @@ import os
 from gi.repository import GLib
 
 from .constants import APP_DIR, DEFAULT_VOLUME, SAVE_DEBOUNCE_MS
+from .paths import real_path
 from .settings import SettingsStore, dump_settings, load_settings
 
 
@@ -75,7 +76,7 @@ class ConfigMixin:
         text = self._fmt_duration(int(seconds))
         it = self.playlist_store.get_iter_first()
         while it is not None:
-            if self.playlist_store.get_value(it, 0) == path:
+            if real_path(self.playlist_store.get_value(it, 0)) == path:
                 self.playlist_store.set_value(it, 3, text)
             it = self.playlist_store.iter_next(it)
         self.update_playlist_info()

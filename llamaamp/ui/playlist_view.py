@@ -2,6 +2,7 @@
 from gi.repository import Gdk, Gtk, Pango
 
 from ..constants import EMPTY_PLAYLIST_HINT, URI_TARGET_INFO
+from ..paths import displayable, real_path
 from ..i18n import _, ngettext
 
 
@@ -278,7 +279,7 @@ class PlaylistViewMixin:
             model = view.get_model()
         if path is None:
             return False
-        tooltip.set_text(model[path][0])
+        tooltip.set_text(displayable(real_path(model[path][0])))
         view.set_tooltip_row(tooltip, path)
         return True
 
@@ -324,7 +325,7 @@ class PlaylistViewMixin:
 
         info_item = Gtk.MenuItem(label=_("File Info… (Alt+3)"))
         info_item.connect("activate",
-                          lambda _w, p=model[paths[0]][0]: self.show_file_info(path=p))
+                          lambda _w, p=real_path(model[paths[0]][0]): self.show_file_info(path=p))
         menu.append(info_item)
 
         menu.append(Gtk.SeparatorMenuItem())

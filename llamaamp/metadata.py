@@ -14,6 +14,7 @@ from .constants import (
     META_CACHE_LIMIT,
 )
 from .i18n import _
+from .paths import real_path
 
 
 class MetadataWorker:
@@ -134,7 +135,7 @@ class MetadataMixin:
         changed = False
         for reference in references:
             path = reference.get_path()
-            if path is not None and self.playlist_store[path][0] == file_path:
+            if path is not None and real_path(self.playlist_store[path][0]) == file_path:
                 if self.playlist_store[path][1] != display:
                     self.playlist_store[path][1] = display
                     changed = True

@@ -4,6 +4,7 @@ import os
 from gi.repository import GLib, Gst, GstPbutils
 
 from .i18n import _
+from .paths import displayable
 
 DISCOVER_TIMEOUT = 5 * Gst.SECOND
 
@@ -61,7 +62,7 @@ def _image_bytes(tags):
 def read_file_info(path):
     """{'sections': [(title, [(label, value), ...]), ...], 'art': bytes or None}.
     Blocking (runs GstDiscoverer); call it off the main loop."""
-    file_rows = [(_('Location'), path)]
+    file_rows = [(_('Location'), displayable(path))]
     if path.startswith(('http://', 'https://')):
         return {'sections': [(_('File'), file_rows + [(_('Status'), _('Internet stream'))])], 'art': None}
     try:

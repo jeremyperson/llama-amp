@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed: files whose names aren't valid UTF-8 (common in older collections)
+  couldn't be added to the playlist, and one in the playlist stopped it from
+  being saved at all. They now play, save, reorder, show with a replacement
+  character, and are indexed and searchable in the library.
 - Media Library (Alt+L, or Settings → Media Library): add your music folders
   and browse by genre, artist and album, search as you type (accents and
   word prefixes), and use smart views for recently added, most played and

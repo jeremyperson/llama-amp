@@ -951,6 +951,32 @@ class PlayerTests(unittest.TestCase):
         self.assertIn('3 tracks', a._library_window.status.get_text())
         self.assertEqual(len(a._library_window.tracks), 3)
 
+    def test_filenames_that_are_not_utf8_work_everywhere(self):
+        a = self.app
+        raw = os.fsencode(self.directory.name) + b'/caf\xe9 latin-1.wav'
+        with open(raw, 'wb') as target, open(self.files[0], 'rb') as source:
+            target.write(source.read())
+        path = os.fsdecode(raw)
+        a._add_paths([path, self.files[1]])
+        self.assertEqual(a.playlist[0], path)
+        self.assertIn('\ufffd', a.playlist_store[0][1])          # shown with a replacement character
+        a._select_row(0)
+        self.assertEqual(a._file_info_target(), path)
+        a.playlist_store.reorder([1, 0])                           # resync reads paths back from the store
+        self.pump(.05)
+        self.assertEqual(a.playlist[1], path)
+        a._play_index(1)
+        self.wait_for(lambda: a.duration > 0)
+        a.library.add_folder(self.directory.name)
+        Scanner(a.library, a.library.folders()).run()
+        a.show_library()
+        a._library_window.search.set_text('latin')
+        self.wait_for(lambda: len(a._library_window.tracks) == 1)
+        self.assertEqual(a._library_window.chosen_paths(), [path])
+        a.destroy()
+        self.app = a = MusicPlayer()                               # the playlist file keeps the exact bytes
+        self.assertEqual(a.playlist[1], path)
+
     def test_corrupt_config_values_fall_back_to_defaults(self):
         a = self.app
         a.destroy()
