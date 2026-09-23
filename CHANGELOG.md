@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: a short track followed by a duplicate of itself could jump the
+  playlist ahead one entry when playback started.
+- Fixed: a config.json with the wrong number of equalizer values prevented
+  startup. Each setting now falls back to its default on its own.
+- The code is now the `llamaamp` package (`musicPlayer.py` remains the
+  launcher), with one declarative schema for every saved setting.
+
 ## 1.5 — 2026-09-22
 
 - Inset LLAMA AMP wordmark with a recessed badge sourced from the application

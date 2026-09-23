@@ -1,24 +1,11 @@
 """Data directory, config.json and the duration sidecar."""
 import json
-import math
 import os
 
 from gi.repository import GLib
 
-from .constants import (
-    APP_DIR,
-    DEFAULT_VOLUME,
-    EQ_BANDS,
-    REPEAT_OFF,
-    RG_MODES,
-    SAVE_DEBOUNCE_MS,
-    SHUFFLE_OFF,
-    SHUFFLE_TRACKS,
-    WINDOW_H,
-    WINDOW_W,
-)
-from .settings import SettingsStore
-from .ui.themes import THEMES
+from .constants import APP_DIR, DEFAULT_VOLUME, SAVE_DEBOUNCE_MS
+from .settings import SettingsStore, dump_settings, load_settings
 
 
 class ConfigMixin:
@@ -125,51 +112,10 @@ class ConfigMixin:
     def _atomic_write(self, path, data, binary=False):
         SettingsStore.write(path, data, binary)
 
-    @staticmethod
-    def _cfg(cfg, key, cast, default, lo=None, hi=None):
-        """Coerce one config value; fall back to default on any bad type/value."""
-        try:
-            v = cast(cfg[key])
-            if lo is not None and v < lo:
-                v = lo
-            if hi is not None and v > hi:
-                v = hi
-            return v
-        except Exception:
-            return default
-
     def load_config(self):
-        """Read config.json into self.config + instance attrs (with safe defaults).
-        Every value is type-checked and clamped so a hand-edited or truncated
-        config can never prevent startup."""
-        defaults = {
-            "volume": DEFAULT_VOLUME, "balance": 0.0,
-            "eq_values": [0.5] * EQ_BANDS,
-            "shuffle": False, "repeat": REPEAT_OFF,
-            "last_index": 0, "last_position_ns": 0,
-            "window_pos": None,
-            # Native-first defaults: bit-transparent DSP bypass + direct DAC
-            # output. Both degrade gracefully (DSP reattaches on demand; ALSA
-            # falls back to the mixer if the device can't be acquired).
-            "direct_mode": True,
-            "alsa_output": True,
-            "alsa_device": None,
-            "playlist_name": None,
-            "tray_icon": True,
-            "gapless": True,
-            "preamp": 0.5,
-            "eq_enabled": True,
-            "time_remaining": False,
-            "replaygain": "off",
-            "listenbrainz_token": None,
-            "scrobble_enabled": False,
-            "notifications": True,
-            "update_check": True,
-            "theme": "green", "palette": None, "visualization": True,
-            "peaks": True, "falloff": "normal", "show_art": True,
-            "windowshade": False, "expanded_size": [WINDOW_W, WINDOW_H],
-            "panels": {},
-        }
+        """Read config.json into self.config + instance attrs. Every value is
+        validated by the settings schema, so a hand-edited or truncated config
+        can never prevent startup."""
         data = {}
         try:
             with open(self.config_path()) as f:
@@ -180,61 +126,37 @@ class ConfigMixin:
             pass
         except Exception as e:
             self.log_debug(f"config load failed, using defaults: {e}")
-        cfg = {**defaults, **data}
-        for key, choices, default in [('theme', THEMES, 'green'),
-                                      ('palette', (None, 'green', 'classic', 'amber'), None),
-                                      ('falloff', ('slow', 'normal', 'fast'), 'normal')]:
-            if not isinstance(cfg.get(key), (str, type(None))) or cfg.get(key) not in choices:
-                cfg[key] = default
-        for key in ('visualization', 'peaks', 'show_art'):
-            cfg[key] = cfg.get(key) is not False
-        if not isinstance(cfg.get('panels'), dict):
-            cfg['panels'] = {}
-        size = cfg.get('expanded_size')
-        if not (isinstance(size, list) and len(size) == 2 and
-                all(isinstance(n, (int, float)) and math.isfinite(n) for n in size)):
-            size = [WINDOW_W, WINDOW_H]
-        self._expanded_size = [max(440, min(4000, int(size[0]))), max(220, min(4000, int(size[1])))]
+        cfg = load_settings(data)
+        self._expanded_size = list(cfg['expanded_size'])
         self._windowshade = False
-        self._restore_shade = cfg.get('windowshade') is True
+        self._restore_shade = cfg['windowshade']
         self.config = cfg
-        self.volume = self._cfg(cfg, "volume", float, DEFAULT_VOLUME, 0.0, 1.0)
-        self.balance = self._cfg(cfg, "balance", float, 0.0, -1.0, 1.0)
-        ev = cfg.get("eq_values")
-        if isinstance(ev, list) and len(ev) == EQ_BANDS:
-            try:
-                self.eq_values = [max(0.0, min(1.0, float(x))) for x in ev]
-            except Exception:
-                self.eq_values = [0.5] * EQ_BANDS
-        sh = cfg.get("shuffle", SHUFFLE_OFF)
-        if isinstance(sh, bool):        # migrate pre-1.x boolean (bool IS int — check first)
-            sh = SHUFFLE_TRACKS if sh else SHUFFLE_OFF
-        self.shuffle = self._cfg({"shuffle": sh}, "shuffle", int, SHUFFLE_OFF, 0, 2)
-        self.repeat_mode = self._cfg(cfg, "repeat", int, REPEAT_OFF) % 3
-        self.direct_mode = cfg.get("direct_mode") is True
-        self.alsa_output = cfg.get("alsa_output") is True
+        self.volume = cfg['volume']
+        self.balance = cfg['balance']
+        self.eq_values = list(cfg['eq_values'])
+        self.shuffle = cfg['shuffle']
+        self.repeat_mode = cfg['repeat']
+        self.direct_mode = cfg['direct_mode']
+        self.alsa_output = cfg['alsa_output']
         self._alsa_recovers = 0   # busy-DAC auto-recovery budget per session
-        pn = cfg.get("playlist_name")
-        self._playlist_name = pn if isinstance(pn, str) and pn else None
-        self.gapless = cfg.get("gapless", True) is not False
+        self._playlist_name = cfg['playlist_name']
+        self.gapless = cfg['gapless']
         self._gapless_next = None   # (index, path, uri) preroll set by about-to-finish
         self._awaiting_own_start = False  # the next stream-start belongs to load_song
-        self.preamp_value = self._cfg(cfg, "preamp", float, 0.5, 0.0, 1.0)
-        self.eq_enabled = cfg.get("eq_enabled", True) is not False
-        self._time_remaining = cfg.get("time_remaining") is True
-        rg = cfg.get("replaygain")
-        self.replaygain = rg if rg in RG_MODES else "off"
+        self.preamp_value = cfg['preamp']
+        self.eq_enabled = cfg['eq_enabled']
+        self._time_remaining = cfg['time_remaining']
+        self.replaygain = cfg['replaygain']
         self._loading = False       # True while load_song rebuilds the pipeline
         # Sleep timer (session-only)
         self._sleep_timer_id = None
         self._sleep_after_track = False
         self._sleep_deadline = None
         self._sleep_mode = None
-        self._restore_index = self._cfg(cfg, "last_index", int, 0, 0)
-        self._restore_position_ns = self._cfg(cfg, "last_position_ns", int, 0, 0)
-        wp = cfg.get("window_pos")
-        if self._valid_pair(wp):
-            self._win_pos = (int(wp[0]), int(wp[1]))
+        self._restore_index = cfg['last_index']
+        self._restore_position_ns = cfg['last_position_ns']
+        if cfg['window_pos'] is not None:
+            self._win_pos = tuple(cfg['window_pos'])
 
     def apply_config(self):
         """Push restored state into widgets after the UI + playlist exist."""
@@ -276,37 +198,33 @@ class ConfigMixin:
         self._write_config()
         return False
 
+    def _live_settings(self):
+        """Settings held in attributes rather than self.config."""
+        return {
+            "volume": getattr(self, "volume", DEFAULT_VOLUME),
+            "balance": getattr(self, "balance", 0.0),
+            "eq_values": self.eq_values,
+            "shuffle": self.shuffle,
+            "repeat": self.repeat_mode,
+            "last_index": self.current_index,
+            "last_position_ns": self._current_position_ns(),
+            "window_pos": self._win_pos,
+            "direct_mode": self.direct_mode,
+            "alsa_output": self.alsa_output,
+            "playlist_name": self._playlist_name,
+            "gapless": self.gapless,
+            "preamp": self.preamp_value,
+            "eq_enabled": self.eq_enabled,
+            "time_remaining": self._time_remaining,
+            "replaygain": self.replaygain,
+            "windowshade": self._windowshade,
+            "expanded_size": self._expanded_size,
+            "panels": self.panels.snapshot() if hasattr(self, 'panels') else self.config['panels'],
+        }
+
     def _write_config(self):
         try:
-            data = {
-                "volume": float(getattr(self, "volume", DEFAULT_VOLUME)),
-                "balance": float(getattr(self, "balance", 0.0)),
-                "eq_values": [float(x) for x in self.eq_values],
-                "shuffle": int(self.shuffle),
-                "repeat": int(self.repeat_mode),
-                "last_index": int(self.current_index),
-                "last_position_ns": self._current_position_ns(),
-                "window_pos": list(self._win_pos) if self._win_pos else None,
-                "direct_mode": bool(self.direct_mode),
-                "alsa_output": bool(self.alsa_output),
-                "alsa_device": self.config.get("alsa_device"),
-                "playlist_name": self._playlist_name,
-                "tray_icon": self.config.get("tray_icon", True) is not False,
-                "gapless": bool(self.gapless),
-                "preamp": float(self.preamp_value),
-                "eq_enabled": bool(self.eq_enabled),
-                "time_remaining": bool(self._time_remaining),
-                "replaygain": self.replaygain,
-                "listenbrainz_token": self.config.get("listenbrainz_token"),
-                "scrobble_enabled": self.config.get("scrobble_enabled") is True,
-                "notifications": self.config.get("notifications", True) is not False,
-                "update_check": self.config.get("update_check", True) is not False,
-            }
-            data.update({key: self.config[key] for key in
-                         ('theme', 'palette', 'visualization', 'peaks', 'falloff', 'show_art')})
-            data['windowshade'] = self._windowshade
-            data['expanded_size'] = self._expanded_size
-            data['panels'] = self.panels.snapshot() if hasattr(self, 'panels') else self.config['panels']
+            data = dump_settings({**self.config, **self._live_settings()})
             serialized = json.dumps(data, indent=2)
             if serialized == self._last_config_json:
                 return
@@ -314,4 +232,3 @@ class ConfigMixin:
             self._last_config_json = serialized
         except Exception as e:
             self.log_debug(f"config save failed: {e}")
-

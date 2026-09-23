@@ -7,7 +7,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from llamaamp.analyzer import AnalyzerState
 from llamaamp.order import PlaybackOrder
-from llamaamp.settings import SettingsStore
+from llamaamp.settings import SCHEMA, SettingsStore, dump_settings, load_settings
 from llamaamp.constants import (SHUFFLE_OFF, SHUFFLE_TRACKS, SHUFFLE_ALBUMS,
                                 REPEAT_OFF, REPEAT_ONE, REPEAT_ALL)
 
@@ -114,6 +114,46 @@ class PersistenceTests(unittest.TestCase):
             SettingsStore.write(path, 'Björk / Jóga\n')
             self.assertEqual(Path(path).read_text(), 'Björk / Jóga\n')
             self.assertFalse(Path(path + '.tmp').exists())
+
+
+
+class SchemaTests(unittest.TestCase):
+    def test_missing_keys_take_defaults_and_unknown_keys_are_not_saved(self):
+        cfg = load_settings({'future_option': 1})
+        self.assertEqual(cfg['volume'], .7)
+        self.assertEqual(cfg['expanded_size'], [560, 740])
+        self.assertEqual(cfg['future_option'], 1)
+        self.assertEqual(list(dump_settings(cfg)), list(SCHEMA))
+
+    def test_each_bad_value_falls_back_on_its_own(self):
+        cfg = load_settings({'volume': 2, 'balance': 'left', 'eq_values': [.1] * 3,
+                             'shuffle': True, 'repeat': 4, 'window_pos': [1, float('nan')],
+                             'theme': ['green'], 'palette': 'amber', 'direct_mode': 'yes',
+                             'gapless': 0, 'playlist_name': '', 'panels': [],
+                             'expanded_size': [100, 99999]})
+        self.assertEqual(cfg['volume'], 1.0)
+        self.assertEqual(cfg['balance'], 0.0)
+        self.assertEqual(cfg['eq_values'], [.5] * 10)
+        self.assertEqual(cfg['shuffle'], SHUFFLE_TRACKS)
+        self.assertEqual(cfg['repeat'], REPEAT_ALL)
+        self.assertIsNone(cfg['window_pos'])
+        self.assertEqual(cfg['theme'], 'green')
+        self.assertEqual(cfg['palette'], 'amber')
+        self.assertIs(cfg['direct_mode'], False)
+        self.assertIs(cfg['gapless'], True)
+        self.assertIsNone(cfg['playlist_name'])
+        self.assertEqual(cfg['panels'], {})
+        self.assertEqual(cfg['expanded_size'], [440, 4000])
+
+    def test_defaults_are_not_shared_between_loads(self):
+        load_settings({})['eq_values'][0] = 1.0
+        self.assertEqual(load_settings({})['eq_values'][0], .5)
+
+    def test_dump_round_trips(self):
+        cfg = load_settings({'window_pos': (3, 4), 'shuffle': 2, 'theme': 'amber'})
+        data = dump_settings(cfg)
+        self.assertEqual(data['window_pos'], [3, 4])
+        self.assertEqual(dump_settings(load_settings(data)), data)
 
 
 if __name__ == '__main__':

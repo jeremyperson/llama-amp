@@ -351,6 +351,24 @@ class PlayerTests(unittest.TestCase):
         self.assertNotEqual(old[3], a._next_generation)
         self.assertEqual(a.order.current, a.entry_ids[0])
 
+    def test_corrupt_config_values_fall_back_to_defaults(self):
+        a = self.app
+        a.destroy()
+        Path(a.config_path()).write_text(json.dumps({
+            'alsa_output': False, 'tray_icon': False, 'update_check': False,
+            'notifications': False, 'eq_values': [.5, .5], 'volume': 'loud',
+            'shuffle': True, 'repeat': 'x', 'replaygain': ['track'], 'preamp': 9,
+        }))
+        self.app = a = MusicPlayer()
+        a.show_all()
+        self.pump(.05)
+        self.assertEqual(a.eq_values, [.5] * 10)
+        self.assertEqual(a.volume, .7)
+        self.assertEqual(a.shuffle, SHUFFLE_TRACKS)
+        self.assertEqual(a.repeat_mode, 0)
+        self.assertEqual(a.replaygain, 'off')
+        self.assertEqual(a.preamp_value, 1.0)
+
     def test_config_validation_and_layout_restore(self):
         a = self.app
         a.destroy()
