@@ -27,6 +27,7 @@ from llamaamp import i18n
 from llamaamp.app import MusicPlayer
 from llamaamp.constants import REPEAT_ALL, REPEAT_ONE, SHUFFLE_TRACKS
 from llamaamp.fileinfo import read_file_info
+from llamaamp.library.scanner import Scanner
 from llamaamp.skin.default import build_default_skin
 from llamaamp.skin.loader import Skin, glyph_cell, parse_pledit, parse_region, parse_viscolor
 from llamaamp.skin.sprites import FONT_LOOKUP
@@ -855,6 +856,8 @@ class PlayerTests(unittest.TestCase):
             collect(a._actions_menu)
             a._select_row(0)
             collect(a._build_row_menu())
+            a.show_library()
+            collect(a._library_window)
             # Dynamic or untranslatable text: track data, numbers, times, the brand
             dynamic = re.compile(r'^(LLAMA AMP|v[\d.]+|[\d:.+−-]*|[\d.]+ ?kHz|\d+ (kbps)?|—|[0-9]+\.wav|'
                                  r'[0-9]+|\d+/\d+|0:0\d|[\d.]+[Kk]|WAV.*|⇄.*|↻.*|[▶Ⅱ⚙▱−×]|CENTER|70%|Flat|.*\(hw:.*\))$')
@@ -886,6 +889,67 @@ class PlayerTests(unittest.TestCase):
             self.assertEqual(i18n.default_song_text(), 'Llama Amp *** Bitte eine Datei wählen ***')
             self.assertEqual(i18n.ngettext('{count} track', '{count} tracks', 3).format(count=3), '3 Titel')
             self.assertEqual(i18n._('Untranslated stays English'), 'Untranslated stays English')
+
+    def library_with_fixtures(self):
+        a = self.app
+        a.library.add_folder(self.directory.name)
+        Scanner(a.library, a.library.folders()).run()      # synchronously
+        a.show_library()
+        return a, a._library_window
+
+    def test_library_window_starts_empty_then_browses_after_a_scan(self):
+        a = self.app
+        a.show_library()
+        window = a._library_window
+        self.assertEqual(window.stack.get_visible_child_name(), 'empty')
+        a.library.add_folder(self.directory.name)
+        Scanner(a.library, a.library.folders()).run()
+        window.refresh()
+        self.assertEqual(window.stack.get_visible_child_name(), 'browser')
+        self.assertEqual(len(window.tracks), 3)
+        genres = [row[0] for row in window.facet_views['genre'].get_model()]
+        self.assertEqual(genres, ['All (3)', '(Unknown) (3)'])
+        window.search.set_text('1')
+        self.wait_for(lambda: len(window.tracks) == 1)
+        self.assertTrue(window.tracks[0][0].endswith('1.wav'))
+
+    def test_library_play_enqueue_and_play_next(self):
+        a, window = self.library_with_fixtures()
+        a._add_paths([self.files[0]])
+        before = list(a.entry_ids)
+        window.play()                                   # nothing selected: everything listed
+        self.assertEqual(sorted(a.playlist), sorted(self.files))
+        self.assertTrue(a.is_playing)
+        a.undo_playlist()
+        self.assertEqual(a.entry_ids, before)
+        window.track_view.get_selection().select_path(Gtk.TreePath(1))
+        window.play_next()
+        self.assertEqual(len(a.playlist), 2)
+        self.assertEqual(list(a.order.queue), [a.entry_ids[1]])
+        window.enqueue()
+        self.assertEqual(len(a.playlist), 3)
+
+    def test_listens_count_plays_without_scrobbling(self):
+        a, window = self.library_with_fixtures()
+        a._add_paths([self.files[1]])
+        a._play_index(0)
+        self.wait_for(lambda: a.duration > 0)
+        a._listen['accum'] = 10.0                       # past half the track
+        a._scrobble_tick()
+        self.assertTrue(a._listen['submitted'])
+        plays = a.library.execute('SELECT plays FROM tracks WHERE path = ?', (self.files[1],))[0]['plays']
+        self.assertEqual(plays, 1)
+        window.refresh()
+        self.assertEqual([row[6] for row in window.tracks if row[0] == self.files[1]], [1])
+
+    def test_background_rescan_updates_the_status(self):
+        a = self.app
+        a.library.add_folder(self.directory.name)
+        a.show_library()
+        a.rescan_library()
+        self.wait_for(lambda: a._library_status and not a._library_status['running'])
+        self.assertIn('3 tracks', a._library_window.status.get_text())
+        self.assertEqual(len(a._library_window.tracks), 3)
 
     def test_corrupt_config_values_fall_back_to_defaults(self):
         a = self.app

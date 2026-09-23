@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Media Library (Alt+L, or Settings → Media Library): add your music folders
+  and browse by genre, artist and album, search as you type (accents and
+  word prefixes), and use smart views for recently added, most played and
+  never played tracks. Play replaces the playlist (one Ctrl+Z undo step),
+  Enqueue and Play next add to it, and tracks drag onto the playlist. The
+  index updates incrementally at startup and counts completed listens.
+
 ## 1.7 — 2026-09-23
 
 - Classic windows dock reliably under real window managers (GNOME tested):

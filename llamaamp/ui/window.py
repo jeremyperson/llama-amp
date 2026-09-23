@@ -166,6 +166,9 @@ class WindowMixin:
         .playlist { background: LCD; color: ACCENT; font: 12px "Liberation Mono";
                     -GtkTreeView-vertical-separator: 0; }
         .playlist:selected { background: CONTROL; color: TEXT; }
+        list.playlist { background: LCD; }
+        list.playlist row { color: ACCENT; }
+        list.playlist row:selected { background: CONTROL; color: TEXT; }
         .playlist-search { background: LCD; color: TEXT; border: 1px solid CONTROL;
                            border-radius: 2px; padding: 3px; min-height: 20px; font-size: 11px; }
         .search-miss { border-color: #e78d55; }

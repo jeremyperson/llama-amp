@@ -47,6 +47,16 @@ and Balance groups and a larger now-playing title.
   **Bypassed · Direct Mode**. Bypassed sliders are dimmed but remain editable;
   moving them stores settings for later. Direct Mode disables the EQ power button.
 
+## Media Library
+
+**Alt+L** opens the library: add the folders where your music lives and
+browse it by genre, artist and album, or search titles, artists, albums and
+genres as you type. Smart views list recently added, most played and never
+played tracks. **Play** swaps the playlist for your selection (Ctrl+Z brings
+the old one back), **Enqueue** and **Play next** add to it, and tracks can be
+dragged onto the playlist. The index refreshes incrementally at startup, and
+every listen past half a track (or four minutes) adds to its play count.
+
 ## Classic skins
 
 **Settings → Skin** switches to classic mode: Winamp 2's main window, equalizer

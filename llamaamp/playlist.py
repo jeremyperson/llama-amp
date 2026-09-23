@@ -10,6 +10,7 @@ from contextlib import contextmanager
 
 from gi.repository import GLib, Gtk
 
+from .constants import AUDIO_EXTENSIONS
 from .i18n import N_, _, default_song_text, ngettext
 
 # Winamp's Sort menu plus artist/album/length; captions (translate with _()
@@ -167,12 +168,7 @@ class PlaylistMixin:
 
     def is_audio_file(self, file_path):
         """Check if a file is an audio file based on its extension"""
-        audio_extensions = {
-            '.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac', '.wma', 
-            '.mp4', '.m4p', '.opus', '.webm', '.3gp', '.amr'
-        }
-        _, ext = os.path.splitext(file_path.lower())
-        return ext in audio_extensions
+        return os.path.splitext(file_path.lower())[1] in AUDIO_EXTENSIONS
 
     def _refresh_order(self):
         self._invalidate_next()
@@ -453,6 +449,15 @@ class PlaylistMixin:
         self._remember_playlist()
         self.playlist = entries
         self.entry_ids = [uuid.uuid4().hex for _ in entries]
+        self.order.queue.clear()
+        self._playlist_name = name
+        self._playlist_edited()
+
+    def replace_playlist(self, paths, name=None):
+        """Swap in a new playlist as one undoable edit (Ctrl+Z restores the old one)."""
+        self._remember_playlist()
+        self.playlist = list(paths)
+        self.entry_ids = [uuid.uuid4().hex for _path in self.playlist]
         self.order.queue.clear()
         self._playlist_name = name
         self._playlist_edited()

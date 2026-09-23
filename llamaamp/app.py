@@ -34,6 +34,7 @@ from .tasks import MainLoopTasks
 from .ui.classic import ClassicMixin
 from .ui.controls import ControlsMixin
 from .ui.file_info import FileInfoMixin
+from .ui.library import LibraryMixin
 from .ui.menus import MenusMixin
 from .ui.playlist_view import PlaylistViewMixin
 from .ui.window import WindowMixin
@@ -42,7 +43,8 @@ from .updates import UpdatesMixin
 
 class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisMixin,
                   DesktopMixin, ScrobbleMixin, UpdatesMixin, AnalyzerViewMixin, WindowMixin,
-                  MenusMixin, ControlsMixin, PlaylistViewMixin, FileInfoMixin, ClassicMixin, Gtk.Window):
+                  MenusMixin, ControlsMixin, PlaylistViewMixin, FileInfoMixin, ClassicMixin, LibraryMixin,
+                  Gtk.Window):
     def __init__(self):
         super().__init__(title=APP_NAME)
         self.tasks = MainLoopTasks()
@@ -146,6 +148,7 @@ class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, Playl
 
         # Restore saved settings (volume/balance/eq/shuffle/repeat/last track)
         self.load_config()
+        self._open_library()
 
         # Attach the audio filter: full DSP chain, or analyzer-only tap in
         # direct mode (spectrum bars stay alive either way)
@@ -212,7 +215,7 @@ class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, Playl
     def on_window_key_press(self, widget, event):
         """Global shortcuts: Space play/pause, Winamp's Z/X/C/V/B transport,
         arrows seek/volume, S shuffle, R repeat, J jump to file, Ctrl+J jump to
-        time, Ctrl+T elapsed/remaining, Ctrl+D double size, Alt+3 file info,
+        time, Ctrl+T elapsed/remaining, Ctrl+D double size, Alt+3 file info, Alt+L library,
         Ctrl+O add files, Ctrl+L open URL.
         Delete/Backspace propagate to the playlist."""
         # Typing in an entry (playlist search, dialogs) must never trigger
@@ -247,6 +250,9 @@ class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, Playl
             return True
         if event.state & Gdk.ModifierType.MOD1_MASK and key == Gdk.KEY_3:
             self.show_file_info()
+            return True
+        if event.state & Gdk.ModifierType.MOD1_MASK and key in (Gdk.KEY_l, Gdk.KEY_L):
+            self.show_library()
             return True
         if key == Gdk.KEY_space:
             self.toggle_play_pause(None)
@@ -318,6 +324,7 @@ class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, Playl
             except Exception:
                 pass
         self._finish_crossfade()
+        self._close_library()
         if self._classic is not None:
             self._classic.destroy()
         try:

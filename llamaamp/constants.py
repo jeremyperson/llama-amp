@@ -50,6 +50,8 @@ META_CACHE_LIMIT = 64                    # LRU caps: probed metadata / embedded 
 FOLDER_ART_CACHE_LIMIT = 32              # per-directory folder art
 SEEK_STEP_SECONDS = 5                    # arrow-key seek step
 VOLUME_STEP = 0.05                       # arrow-key / scroll volume step
+AUDIO_EXTENSIONS = frozenset({'.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac', '.wma', '.mp4', '.m4p',
+                              '.opus', '.webm', '.3gp', '.amr'})
 EMPTY_PLAYLIST_HINT = N_("Drop audio files or folders here\nor use Add ▾")
 CLASSIC_PLAYLIST_HINT = N_("Drop audio files or folders here\nor use the Add button")
 URI_TARGET_INFO = 80                     # DnD info id for uri-list drops on the playlist

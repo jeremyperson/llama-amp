@@ -31,7 +31,7 @@ class ScrobbleMixin:
         submit per the standard 50%-or-4-minutes rule. Runs on the 100ms
         position heartbeat; cheap early-outs keep it free."""
         listen = getattr(self, '_listen', None)
-        if listen is None or listen['submitted'] or not self._scrobble_enabled():
+        if listen is None or listen['submitted']:
             return
         if listen['path'] != self.current_song or not self.current_song:
             return
@@ -42,19 +42,22 @@ class ScrobbleMixin:
             listen['accum'] += now - listen['last_wall']
         listen['last_wall'] = now
 
+        # Scrobbling needs artist and title; conservatively skip artist-less
+        # files (usually mistagged). Play counts don't.
         cached = self._cache_get(self._meta_cache, listen['path'])
         artist = cached.get('artist') if isinstance(cached, dict) else None
         title = cached.get('title') if isinstance(cached, dict) else None
-        if not artist or not title:
-            return  # conservatively skip artist-less files (usually mistagged)
+        scrobble = self._scrobble_enabled() and artist and title
 
-        if not listen['now_sent']:
+        if scrobble and not listen['now_sent']:
             listen['now_sent'] = True
             self._scrobble_send('playing_now', artist, title, None)
         duration_s = self.duration // Gst.SECOND if self.duration > 0 else 0
         if duration_s > 0 and listen['accum'] >= min(240, duration_s / 2):
             listen['submitted'] = True
-            self._scrobble_send('single', artist, title, listen['start_ts'])
+            self._listen_completed(listen['path'])
+            if scrobble:
+                self._scrobble_send('single', artist, title, listen['start_ts'])
 
     def _scrobble_send(self, listen_type, artist, title, listened_at):
         """POST to ListenBrainz on a daemon thread; failures are silent

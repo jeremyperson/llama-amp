@@ -96,7 +96,7 @@ Section: sound
 Priority: optional
 Architecture: all
 Depends: python3, python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, gir1.2-gstreamer-1.0, gir1.2-gst-plugins-base-1.0, gir1.2-gdkpixbuf-2.0, gstreamer1.0-plugins-good, gstreamer1.0-alsa, gstreamer1.0-pulseaudio
-Recommends: gstreamer1.0-plugins-bad, gstreamer1.0-libav
+Recommends: gstreamer1.0-plugins-bad, gstreamer1.0-libav, python3-mutagen
 Maintainer: Jeremy Person <1409499+jeremyperson@users.noreply.github.com>
 Description: Winamp-inspired music player
  Compact GTK3 music player with three retro themes, a 10-band equalizer,
