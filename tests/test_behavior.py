@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import struct
 
 from llamaamp.analyzer import AnalyzerState, ScopeState, decode_pcm
+from llamaamp.crossfade import crossfade_gains
 from llamaamp.order import PlaybackOrder
 from llamaamp.playlist import SORT_KEYS, sort_entries
 from llamaamp.ui.menus import parse_clock
@@ -245,6 +246,17 @@ class SortTests(unittest.TestCase):
         self.assertEqual(sorted(shuffled), sorted(entries))
         self.assertEqual([key for key, _ in sort_entries(entries, 'title', self.INFO.get)], ['x1', 'x2', 'y'])
         self.assertIn('randomize', SORT_KEYS)
+
+
+
+class CrossfadeGainTests(unittest.TestCase):
+    def test_equal_power_curve(self):
+        self.assertEqual(crossfade_gains(0), (1.0, 0.0))
+        out, into = crossfade_gains(.5)
+        self.assertAlmostEqual(out, into)
+        self.assertAlmostEqual(out ** 2 + into ** 2, 1.0)
+        self.assertEqual(crossfade_gains(1), (0.0, 1.0))
+        self.assertEqual(crossfade_gains(7), (0.0, 1.0))
 
 
 if __name__ == '__main__':

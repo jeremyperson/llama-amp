@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Crossfade (Settings → Crossfade, 2–10 s, off by default): the next track
+  starts under the end of the current one with an equal-power fade. It
+  uses the sound server's mixer, so it's unavailable with ALSA Output
+  (bit-perfect) and for internet radio, where gapless playback continues.
+  Skipping, seeking, pausing or stopping mid-fade ends the fade at once.
 - File Info (Alt+3, or right-click a playlist row): tags, ReplayGain
   values, format, sample rate, bit depth, bitrate, length, location, size
   and cover art for the selected or current track. Read-only; files are

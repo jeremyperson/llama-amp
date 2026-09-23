@@ -144,6 +144,7 @@ class EngineMixin:
         """Rebuild the audio-filter chain and resume the current track at the
         same position. playbin's audio-filter only changes in the NULL state,
         so this is the shared machinery for Direct Mode and ReplayGain toggles."""
+        self._finish_crossfade()
         self._invalidate_next()
         was_playing = self.is_playing
         resume_ns = self._current_position_ns()
@@ -274,6 +275,7 @@ class EngineMixin:
         exclusive to Llama Amp."""
         if self.alsa_output:
             # Turning OFF: hand the device back to the mixer (synchronous)
+            self._finish_crossfade()
             self.alsa_output = False
             was_playing = self.is_playing
             resume_ns = self._current_position_ns()
@@ -522,8 +524,12 @@ class EngineMixin:
 
     def _on_about_to_finish(self, playbin):
         # Streaming thread: only a protected, precomputed decision is accessed.
+        if playbin is not self.player:
+            return      # a crossfade's outgoing player: it just ends
         with self._gapless_lock:
             snapshot = self._next_snapshot
+            if snapshot is not None and self._crossfade_applies(snapshot[1]):
+                return  # the crossfade starts the next track instead
             # A pending seek would switch playbin to the queued URI (or stall).
             # After the seek the decoder drains again and re-emits this signal;
             # if that happens before the seek is cleared, EOS advances instead.
@@ -815,6 +821,7 @@ class EngineMixin:
         """Seek within the current track. Once about-to-finish has handed playbin
         the next URI, a flushing seek switches to that track instead, so the
         current entry is reloaded and the seek applied as it starts."""
+        self._finish_crossfade()
         with self._gapless_lock:
             armed = self._gapless_next is not None
         if armed:
@@ -849,6 +856,7 @@ class EngineMixin:
             return
             
         if self.is_playing:
+            self._finish_crossfade()
             self.player.set_state(Gst.State.PAUSED)
             self._sync_play_ui(False)
         else:
@@ -897,6 +905,7 @@ class EngineMixin:
         self.info_label.set_text("All files are missing - please re-add music files")
 
     def stop_song(self, button):
+        self._finish_crossfade()
         self._invalidate_next()
         self._pending_seek_ns = None
         self.player.set_state(Gst.State.NULL)
@@ -972,6 +981,7 @@ class EngineMixin:
     def load_song(self, index):
         if not (0 <= index < len(self.playlist)):
             return
+        self._finish_crossfade()
         # New load generation: stale async results (probes, art, bus tags) are ignored
         self._load_gen += 1
         self._invalidate_next()

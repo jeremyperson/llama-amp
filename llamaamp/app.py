@@ -8,6 +8,7 @@ from collections import OrderedDict, deque
 from gi.repository import GLib, Gdk, Gst, Gtk
 
 from .analyzer import AnalyzerState, AnalyzerViewMixin, ScopeState
+from .crossfade import CrossfadeMixin
 from .config import ConfigMixin
 from .constants import (
     APP_NAME,
@@ -38,7 +39,7 @@ from .ui.window import WindowMixin
 from .updates import UpdatesMixin
 
 
-class MusicPlayer(EngineMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisMixin,
+class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisMixin,
                   DesktopMixin, ScrobbleMixin, UpdatesMixin, AnalyzerViewMixin, WindowMixin,
                   MenusMixin, ControlsMixin, PlaylistViewMixin, FileInfoMixin, Gtk.Window):
     def __init__(self):
@@ -67,6 +68,7 @@ class MusicPlayer(EngineMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisM
         
         # Audio setup
         self.player = Gst.ElementFactory.make("playbin", "player")
+        self._xfade = None              # running crossfade (see crossfade.py)
         self.current_song = None
         self.is_playing = False
         self.playback_state = 'Stopped'
@@ -313,6 +315,7 @@ class MusicPlayer(EngineMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisM
                 self.tasks.source_remove(tid)
             except Exception:
                 pass
+        self._finish_crossfade()
         try:
             self.player.set_state(Gst.State.NULL)
         except Exception:

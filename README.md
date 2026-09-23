@@ -57,6 +57,7 @@ Screenshots use demonstration track labels and generated test audio.
 
 **Playback**
 - Gapless playback (GStreamer `about-to-finish` handoff)
+- Crossfade (2–10 s, equal-power) when playing through the desktop mixer
 - ReplayGain volume normalization (track/album modes, rgvolume + limiter)
 - Internet radio: open SHOUTcast/Icecast URLs (`Ctrl+L`) with live ICY
   now-playing titles and buffering handling

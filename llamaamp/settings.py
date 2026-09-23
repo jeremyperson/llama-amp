@@ -146,6 +146,7 @@ SCHEMA = {
     'panels': Setting({}, _dict),
     'vis_mode': Setting('spectrum', _choice(('spectrum', 'scope'))),
     'double_size': Setting(False, _is_true),
+    'crossfade_s': Setting(0, _clamped(int, 0, 10)),
 }
 
 

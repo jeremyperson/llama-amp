@@ -594,6 +594,7 @@ class ControlsMixin:
                 if abs(progress - getattr(self, '_last_progress', -1)) >= 0.25:
                     self._last_progress = progress
                     self.position_scale.set_value(progress)
+                self._crossfade_tick(position)
         self._scrobble_tick()
         # Song-end is handled by the real EOS bus message (on_bus_eos), not polling.
         return True

@@ -153,6 +153,19 @@ class MenusMixin:
         gapless_item.connect("toggled", self.toggle_gapless)
         menu.append(gapless_item)
 
+        # Crossfade overlaps two players in the sound server's mixer
+        fade_item = Gtk.MenuItem(label="Crossfade" + (" (needs ALSA Output off)" if self.alsa_output else ""))
+        fade_sub = Gtk.Menu()
+        for seconds in (0, 2, 4, 6, 8, 10):
+            item = Gtk.CheckMenuItem(label=f"{seconds} seconds" if seconds else "Off")
+            item.set_draw_as_radio(True)
+            item.set_active(self.config.get('crossfade_s', 0) == seconds)
+            item.connect("activate", lambda _w, s=seconds: self._set_crossfade(s))
+            fade_sub.append(item)
+        fade_item.set_submenu(fade_sub)
+        fade_item.set_sensitive(not self.alsa_output)
+        menu.append(fade_item)
+
         # ReplayGain volume normalization (inactive in Direct Mode)
         rg_item = Gtk.MenuItem(label="ReplayGain")
         rg_sub = Gtk.Menu()

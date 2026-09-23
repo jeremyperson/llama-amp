@@ -563,6 +563,69 @@ class PlayerTests(unittest.TestCase):
         sort_menu.get_children()[-2].activate()        # Reverse list, through the menu
         self.assertEqual(a.entry_ids, keys)
 
+    def long_files(self, count=2, seconds=3):
+        paths = []
+        for i in range(count):
+            path = str(Path(self.directory.name, f'long{i}.wav'))
+            with wave.open(path, 'wb') as audio:
+                audio.setparams((1, 2, 16000, 0, 'NONE', 'not compressed'))
+                audio.writeframes(struct.pack('<h', 1000) * 16000 * seconds)
+            paths.append(path)
+        return paths
+
+    def test_crossfade_overlaps_the_next_track(self):
+        a = self.app
+        a._set_crossfade(1)
+        a._add_paths(self.long_files())
+        a._play_index(0)
+        self.wait_for(lambda: a.duration > 0)
+        a.seek_to(1.6)
+        self.wait_for(lambda: a._xfade is not None)
+        outgoing = a._xfade['outgoing']
+        self.assertIsNot(outgoing, a.player)
+        self.assertEqual(a.current_index, 1)                   # display follows the incoming track
+        self.assertEqual(outgoing.get_state(0)[1], Gst.State.PLAYING)
+        self.wait_for(lambda: a.player.get_property('volume') > .1)
+        self.assertLess(outgoing.get_property('volume'), a.volume)
+        self.wait_for(lambda: a._xfade is None)
+        self.assertEqual(outgoing.get_state(0)[1], Gst.State.NULL)
+        self.assertAlmostEqual(a.player.get_property('volume'), a.volume, places=3)
+        self.assertEqual(a.current_index, 1)
+        self.assertEqual(a.order.current, a.entry_ids[1])
+        self.assertTrue(a.is_playing)
+
+    def test_crossfade_replaces_gapless_only_where_it_applies(self):
+        a = self.app
+        a._set_crossfade(2)
+        a._add_paths(self.long_files())
+        a._play_index(0)
+        a._on_about_to_finish(a.player)
+        self.assertIsNone(a._gapless_next)                     # the crossfade will take over
+        a._set_crossfade(0)
+        a._on_about_to_finish(a.player)
+        self.assertIsNotNone(a._gapless_next)
+        a._invalidate_next()
+        a._set_crossfade(2)
+        a.alsa_output = True                                   # exclusive output: gapless instead
+        self.assertFalse(a._crossfade_applies(a.playlist[1]))
+
+    def test_user_actions_end_a_crossfade_cleanly(self):
+        a = self.app
+        a._set_crossfade(2)
+        a._add_paths(self.long_files(3))
+        a._play_index(0)
+        self.wait_for(lambda: a.duration > 0)
+        a.seek_to(1.5)
+        self.wait_for(lambda: a._xfade is not None)
+        outgoing = a._xfade['outgoing']
+        a.next_song(None)
+        self.assertIsNone(a._xfade)
+        self.assertEqual(outgoing.get_state(0)[1], Gst.State.NULL)
+        self.assertEqual(a.current_index, 2)
+        self.assertAlmostEqual(a.player.get_property('volume'), a.volume, places=3)
+        a.stop_song(None)
+        self.assertEqual(a.playback_state, 'Stopped')
+
     def test_corrupt_config_values_fall_back_to_defaults(self):
         a = self.app
         a.destroy()
