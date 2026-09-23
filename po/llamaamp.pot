@@ -6,9 +6,9 @@
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: Llama Amp 1.7\n"
+"Project-Id-Version: Llama Amp 1.8\n"
 "Report-Msgid-Bugs-To: https://github.com/jeremyperson/llama-amp/issues\n"
-"POT-Creation-Date: 2026-09-23 07:17-0600\n"
+"POT-Creation-Date: 2026-09-23 07:35-0600\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -67,16 +67,16 @@ msgstr ""
 msgid "Show/Hide"
 msgstr ""
 
-#: llamaamp/desktop.py:60 llamaamp/ui/controls.py:38 llamaamp/ui/library.py:233
-#: llamaamp/ui/library.py:379
+#: llamaamp/desktop.py:60 llamaamp/ui/controls.py:38 llamaamp/ui/library.py:235
+#: llamaamp/ui/library.py:381
 msgid "Play"
 msgstr ""
 
-#: llamaamp/desktop.py:63 llamaamp/ui/controls.py:162 llamaamp/ui/window.py:457
+#: llamaamp/desktop.py:63 llamaamp/ui/controls.py:162 llamaamp/ui/window.py:458
 msgid "Next"
 msgstr ""
 
-#: llamaamp/desktop.py:66 llamaamp/ui/controls.py:159 llamaamp/ui/window.py:455
+#: llamaamp/desktop.py:66 llamaamp/ui/controls.py:159 llamaamp/ui/window.py:456
 msgid "Previous"
 msgstr ""
 
@@ -211,312 +211,312 @@ msgstr ""
 msgid "File missing - please re-add to playlist"
 msgstr ""
 
-#: llamaamp/fileinfo.py:64
+#: llamaamp/fileinfo.py:65
 msgid "Location"
 msgstr ""
 
-#: llamaamp/fileinfo.py:66 llamaamp/fileinfo.py:70 llamaamp/fileinfo.py:76
-#: llamaamp/fileinfo.py:118
+#: llamaamp/fileinfo.py:67 llamaamp/fileinfo.py:71 llamaamp/fileinfo.py:77
+#: llamaamp/fileinfo.py:119
 msgid "File"
 msgstr ""
 
-#: llamaamp/fileinfo.py:66
+#: llamaamp/fileinfo.py:67
 msgid "Internet stream"
 msgstr ""
 
-#: llamaamp/fileinfo.py:66 llamaamp/fileinfo.py:70 llamaamp/fileinfo.py:76
+#: llamaamp/fileinfo.py:67 llamaamp/fileinfo.py:71 llamaamp/fileinfo.py:77
 msgid "Status"
 msgstr ""
 
-#: llamaamp/fileinfo.py:70
+#: llamaamp/fileinfo.py:71
 msgid "File not found"
 msgstr ""
 
-#: llamaamp/fileinfo.py:71
+#: llamaamp/fileinfo.py:72
 msgid "Size"
 msgstr ""
 
-#: llamaamp/fileinfo.py:76
+#: llamaamp/fileinfo.py:77
 #, python-brace-format
 msgid "Unreadable: {error}"
 msgstr ""
 
-#: llamaamp/fileinfo.py:88 llamaamp/ui/library.py:17 llamaamp/ui/library.py:213
+#: llamaamp/fileinfo.py:89 llamaamp/ui/library.py:18 llamaamp/ui/library.py:215
 msgid "Artist"
 msgstr ""
 
-#: llamaamp/fileinfo.py:88 llamaamp/ui/library.py:213
+#: llamaamp/fileinfo.py:89 llamaamp/ui/library.py:215
 msgid "Title"
 msgstr ""
 
-#: llamaamp/fileinfo.py:89 llamaamp/ui/library.py:17 llamaamp/ui/library.py:214
+#: llamaamp/fileinfo.py:90 llamaamp/ui/library.py:18 llamaamp/ui/library.py:216
 msgid "Album"
 msgstr ""
 
-#: llamaamp/fileinfo.py:89
+#: llamaamp/fileinfo.py:90
 msgid "Album artist"
 msgstr ""
 
-#: llamaamp/fileinfo.py:90 llamaamp/fileinfo.py:117
+#: llamaamp/fileinfo.py:91 llamaamp/fileinfo.py:118
 msgid "Track"
 msgstr ""
 
-#: llamaamp/fileinfo.py:91
+#: llamaamp/fileinfo.py:92
 msgid "Disc"
 msgstr ""
 
-#: llamaamp/fileinfo.py:92 llamaamp/ui/library.py:17
+#: llamaamp/fileinfo.py:93 llamaamp/ui/library.py:18
 msgid "Genre"
 msgstr ""
 
-#: llamaamp/fileinfo.py:92
+#: llamaamp/fileinfo.py:93
 msgid "Year"
 msgstr ""
 
-#: llamaamp/fileinfo.py:93
+#: llamaamp/fileinfo.py:94
 msgid "Comment"
 msgstr ""
 
-#: llamaamp/fileinfo.py:93
+#: llamaamp/fileinfo.py:94
 msgid "Composer"
 msgstr ""
 
-#: llamaamp/fileinfo.py:94 llamaamp/ui/menus.py:180
+#: llamaamp/fileinfo.py:95 llamaamp/ui/menus.py:180
 msgid "Album gain"
 msgstr ""
 
-#: llamaamp/fileinfo.py:94 llamaamp/ui/menus.py:179
+#: llamaamp/fileinfo.py:95 llamaamp/ui/menus.py:179
 msgid "Track gain"
 msgstr ""
 
-#: llamaamp/fileinfo.py:107
+#: llamaamp/fileinfo.py:108
 msgid "Format"
 msgstr ""
 
-#: llamaamp/fileinfo.py:108
+#: llamaamp/fileinfo.py:109
 msgid "Sample rate"
 msgstr ""
 
-#: llamaamp/fileinfo.py:108
+#: llamaamp/fileinfo.py:109
 #, python-brace-format
 msgid "{rate} kHz"
 msgstr ""
 
-#: llamaamp/fileinfo.py:109
+#: llamaamp/fileinfo.py:110
 msgid "Channels"
 msgstr ""
 
-#: llamaamp/fileinfo.py:109
+#: llamaamp/fileinfo.py:110
 msgid "Mono"
 msgstr ""
 
-#: llamaamp/fileinfo.py:109
+#: llamaamp/fileinfo.py:110
 msgid "Stereo"
 msgstr ""
 
-#: llamaamp/fileinfo.py:109
+#: llamaamp/fileinfo.py:110
 #, python-brace-format
 msgid "{count} channels"
 msgstr ""
 
-#: llamaamp/fileinfo.py:110
+#: llamaamp/fileinfo.py:111
 msgid "Bit depth"
 msgstr ""
 
-#: llamaamp/fileinfo.py:110
+#: llamaamp/fileinfo.py:111
 #, python-brace-format
 msgid "{depth}-bit"
 msgstr ""
 
-#: llamaamp/fileinfo.py:111
+#: llamaamp/fileinfo.py:112
 msgid "Bitrate"
-msgstr ""
-
-#: llamaamp/fileinfo.py:111
-#, python-brace-format
-msgid "{rate} kbps"
 msgstr ""
 
 #: llamaamp/fileinfo.py:112
 #, python-brace-format
+msgid "{rate} kbps"
+msgstr ""
+
+#: llamaamp/fileinfo.py:113
+#, python-brace-format
 msgid "≈ {rate} kbps average"
 msgstr ""
 
-#: llamaamp/fileinfo.py:115 llamaamp/ui/library.py:214
+#: llamaamp/fileinfo.py:116 llamaamp/ui/library.py:216
 msgid "Length"
 msgstr ""
 
-#: llamaamp/fileinfo.py:117
+#: llamaamp/fileinfo.py:118
 msgid "Audio"
 msgstr ""
 
-#: llamaamp/library/queries.py:19
+#: llamaamp/library/queries.py:20
 msgid "All music"
 msgstr ""
 
-#: llamaamp/library/queries.py:20
+#: llamaamp/library/queries.py:21
 msgid "Recently added"
 msgstr ""
 
-#: llamaamp/library/queries.py:21
+#: llamaamp/library/queries.py:22
 msgid "Most played"
 msgstr ""
 
-#: llamaamp/library/queries.py:22
+#: llamaamp/library/queries.py:23
 msgid "Never played"
 msgstr ""
 
-#: llamaamp/metadata.py:133 llamaamp/playlist.py:203
+#: llamaamp/metadata.py:134 llamaamp/playlist.py:205
 #, python-brace-format
 msgid "{name} [MISSING]"
 msgstr ""
 
-#: llamaamp/playlist.py:18
+#: llamaamp/playlist.py:19
 msgid "By album"
 msgstr ""
 
-#: llamaamp/playlist.py:18
+#: llamaamp/playlist.py:19
 msgid "By artist"
 msgstr ""
 
-#: llamaamp/playlist.py:18
+#: llamaamp/playlist.py:19
 msgid "By title"
 msgstr ""
 
-#: llamaamp/playlist.py:19
+#: llamaamp/playlist.py:20
 msgid "By filename"
 msgstr ""
 
-#: llamaamp/playlist.py:19
+#: llamaamp/playlist.py:20
 msgid "By path and filename"
 msgstr ""
 
-#: llamaamp/playlist.py:20
+#: llamaamp/playlist.py:21
 msgid "By length"
 msgstr ""
 
-#: llamaamp/playlist.py:20
+#: llamaamp/playlist.py:21
 msgid "Randomize list"
 msgstr ""
 
-#: llamaamp/playlist.py:20
+#: llamaamp/playlist.py:21
 msgid "Reverse list"
 msgstr ""
 
-#: llamaamp/playlist.py:24
+#: llamaamp/playlist.py:25
 #, python-brace-format
 msgid "❌ {name} [MISSING]"
 msgstr ""
 
-#: llamaamp/playlist.py:28
+#: llamaamp/playlist.py:29
 #, python-brace-format
 msgid "Added {count} file"
 msgid_plural "Added {count} files"
 msgstr[0] ""
 msgstr[1] ""
 
-#: llamaamp/playlist.py:225
+#: llamaamp/playlist.py:227
 msgid "Nothing to undo"
 msgstr ""
 
-#: llamaamp/playlist.py:237
+#: llamaamp/playlist.py:239
 msgid "Playlist edit undone"
 msgstr ""
 
-#: llamaamp/playlist.py:279
+#: llamaamp/playlist.py:281
 msgid "Add Music Files"
 msgstr ""
 
-#: llamaamp/playlist.py:291
+#: llamaamp/playlist.py:293
 msgid "Audio files"
 msgstr ""
 
-#: llamaamp/playlist.py:297
+#: llamaamp/playlist.py:299
 msgid "Playlists (*.m3u, *.m3u8)"
 msgstr ""
 
-#: llamaamp/playlist.py:317
+#: llamaamp/playlist.py:319
 msgid "Add Music Folder"
 msgstr ""
 
-#: llamaamp/playlist.py:347
+#: llamaamp/playlist.py:349
 #, python-brace-format
 msgid "No audio files in {folder}"
 msgstr ""
 
-#: llamaamp/playlist.py:354
+#: llamaamp/playlist.py:356
 msgid "No missing files"
 msgstr ""
 
-#: llamaamp/playlist.py:360
+#: llamaamp/playlist.py:362
 #, python-brace-format
 msgid "Removed {count} missing file — Ctrl+Z to undo"
 msgid_plural "Removed {count} missing files — Ctrl+Z to undo"
 msgstr[0] ""
 msgstr[1] ""
 
-#: llamaamp/playlist.py:368
+#: llamaamp/playlist.py:370
 msgid "Export Playlist"
 msgstr ""
 
-#: llamaamp/playlist.py:385
+#: llamaamp/playlist.py:387
 #, python-brace-format
 msgid "Exported {count} track"
 msgid_plural "Exported {count} tracks"
 msgstr[0] ""
 msgstr[1] ""
 
-#: llamaamp/playlist.py:388
+#: llamaamp/playlist.py:390
 msgid "Export failed"
 msgstr ""
 
-#: llamaamp/playlist.py:417
+#: llamaamp/playlist.py:419
 #, python-brace-format
 msgid "Saved playlist '{name}'"
 msgstr ""
 
-#: llamaamp/playlist.py:421
+#: llamaamp/playlist.py:423
 msgid "Save Playlist As"
 msgstr ""
 
-#: llamaamp/playlist.py:431
+#: llamaamp/playlist.py:433
 msgid "Playlist name:"
 msgstr ""
 
-#: llamaamp/playlist.py:447
+#: llamaamp/playlist.py:449
 #, python-brace-format
 msgid "Playlist '{name}' is empty/unreadable"
 msgstr ""
 
-#: llamaamp/playlist.py:474
+#: llamaamp/playlist.py:476
 msgid "Removed from playlist — Ctrl+Z to undo"
 msgstr ""
 
-#: llamaamp/playlist.py:484
+#: llamaamp/playlist.py:486
 msgid "Playlist cleared — Ctrl+Z to undo"
 msgstr ""
 
-#: llamaamp/playlist.py:490 llamaamp/ui/library.py:303
-#: llamaamp/ui/playlist_view.py:16
+#: llamaamp/playlist.py:492 llamaamp/ui/library.py:305
+#: llamaamp/ui/playlist_view.py:17
 #, python-brace-format
 msgid "{count} track"
 msgid_plural "{count} tracks"
 msgstr[0] ""
 msgstr[1] ""
 
-#: llamaamp/playlist.py:529
+#: llamaamp/playlist.py:531
 #, python-brace-format
 msgid "Queued {count} track"
 msgid_plural "Queued {count} tracks"
 msgstr[0] ""
 msgstr[1] ""
 
-#: llamaamp/playlist.py:591
+#: llamaamp/playlist.py:596
 #, python-brace-format
 msgid "⚠ {name} [UNSUPPORTED]"
 msgstr ""
 
-#: llamaamp/playlist.py:616
+#: llamaamp/playlist.py:621
 #, python-brace-format
 msgid "{action} — Ctrl+Z to undo"
 msgstr ""
@@ -601,7 +601,7 @@ msgstr ""
 msgid "Add URL…"
 msgstr ""
 
-#: llamaamp/ui/classic/playlist_window.py:189 llamaamp/ui/library.py:436
+#: llamaamp/ui/classic/playlist_window.py:189 llamaamp/ui/library.py:438
 msgid "Add folder…"
 msgstr ""
 
@@ -738,7 +738,7 @@ msgstr ""
 msgid "stereo"
 msgstr ""
 
-#: llamaamp/ui/controls.py:160 llamaamp/ui/window.py:456
+#: llamaamp/ui/controls.py:160 llamaamp/ui/window.py:457
 msgid "Play / Pause (Space)"
 msgstr ""
 
@@ -882,123 +882,123 @@ msgstr ""
 msgid "REPEAT 1"
 msgstr ""
 
-#: llamaamp/ui/file_info.py:20
+#: llamaamp/ui/file_info.py:21
 msgid "Select a track for File Info"
 msgstr ""
 
-#: llamaamp/ui/file_info.py:25
+#: llamaamp/ui/file_info.py:26
 #, python-brace-format
 msgid "File Info — {name}"
 msgstr ""
 
-#: llamaamp/ui/file_info.py:27 llamaamp/ui/library.py:410
+#: llamaamp/ui/file_info.py:28 llamaamp/ui/library.py:412
 msgid "_Close"
 msgstr ""
 
-#: llamaamp/ui/file_info.py:43
+#: llamaamp/ui/file_info.py:44
 msgid "Reading…"
 msgstr ""
 
-#: llamaamp/ui/library.py:100
+#: llamaamp/ui/library.py:101
 #, python-brace-format
 msgid "Playing {count} from the library — Ctrl+Z restores the playlist"
 msgstr ""
 
-#: llamaamp/ui/library.py:119
+#: llamaamp/ui/library.py:120
 #, python-brace-format
 msgid "Media Library — {app}"
 msgstr ""
 
-#: llamaamp/ui/library.py:135
+#: llamaamp/ui/library.py:137
 msgid "Search title, artist, album, genre…"
 msgstr ""
 
-#: llamaamp/ui/library.py:142
+#: llamaamp/ui/library.py:144
 msgid "Folders…"
 msgstr ""
 
-#: llamaamp/ui/library.py:142
+#: llamaamp/ui/library.py:144
 msgid "Rescan"
 msgstr ""
 
-#: llamaamp/ui/library.py:160
+#: llamaamp/ui/library.py:162
 msgid "Build your library"
 msgstr ""
 
-#: llamaamp/ui/library.py:163
+#: llamaamp/ui/library.py:165
 #, python-brace-format
 msgid ""
 "Add the folders where your music lives. {app} indexes their tags and keeps "
 "them up to date each time it starts."
 msgstr ""
 
-#: llamaamp/ui/library.py:168
+#: llamaamp/ui/library.py:170
 msgid "Add a music folder…"
 msgstr ""
 
-#: llamaamp/ui/library.py:213
+#: llamaamp/ui/library.py:215
 msgid "#"
 msgstr ""
 
-#: llamaamp/ui/library.py:214
+#: llamaamp/ui/library.py:216
 msgid "Plays"
 msgstr ""
 
-#: llamaamp/ui/library.py:233 llamaamp/ui/library.py:379
+#: llamaamp/ui/library.py:235 llamaamp/ui/library.py:381
 msgid "Enqueue"
 msgstr ""
 
-#: llamaamp/ui/library.py:233 llamaamp/ui/library.py:380
+#: llamaamp/ui/library.py:235 llamaamp/ui/library.py:382
 msgid "Play next"
 msgstr ""
 
-#: llamaamp/ui/library.py:271
+#: llamaamp/ui/library.py:273
 #, python-brace-format
 msgid "All ({count})"
 msgstr ""
 
-#: llamaamp/ui/library.py:273
+#: llamaamp/ui/library.py:275
 msgid "(Unknown)"
 msgstr ""
 
-#: llamaamp/ui/library.py:298
+#: llamaamp/ui/library.py:300
 #, python-brace-format
 msgid "{count} track · {length}"
 msgid_plural "{count} tracks · {length}"
 msgstr[0] ""
 msgstr[1] ""
 
-#: llamaamp/ui/library.py:305
+#: llamaamp/ui/library.py:307
 #, python-brace-format
 msgid "Scanning… {scanned} files checked"
 msgstr ""
 
-#: llamaamp/ui/library.py:307
+#: llamaamp/ui/library.py:309
 msgid "up to date"
 msgstr ""
 
-#: llamaamp/ui/library.py:381
+#: llamaamp/ui/library.py:383
 msgid "File Info…"
 msgstr ""
 
-#: llamaamp/ui/library.py:396
+#: llamaamp/ui/library.py:398
 msgid "Add Music Folder to Library"
 msgstr ""
 
-#: llamaamp/ui/library.py:398
+#: llamaamp/ui/library.py:400
 msgid "_Add"
 msgstr ""
 
-#: llamaamp/ui/library.py:398
+#: llamaamp/ui/library.py:400
 msgid "_Cancel"
 msgstr ""
 
-#: llamaamp/ui/library.py:409
+#: llamaamp/ui/library.py:411
 msgid "Library Folders"
 msgstr ""
 
-#: llamaamp/ui/library.py:438 llamaamp/ui/playlist_view.py:129
-#: llamaamp/ui/playlist_view.py:331
+#: llamaamp/ui/library.py:440 llamaamp/ui/playlist_view.py:130
+#: llamaamp/ui/playlist_view.py:332
 msgid "Remove"
 msgstr ""
 
@@ -1297,54 +1297,54 @@ msgstr ""
 msgid "Reattach {panel}"
 msgstr ""
 
-#: llamaamp/ui/playlist_view.py:22
+#: llamaamp/ui/playlist_view.py:23
 msgid "Find in playlist…"
 msgstr ""
 
-#: llamaamp/ui/playlist_view.py:123
+#: llamaamp/ui/playlist_view.py:124
 msgid "Add ▾"
 msgstr ""
 
-#: llamaamp/ui/playlist_view.py:126
+#: llamaamp/ui/playlist_view.py:127
 msgid "Playlist ▾"
 msgstr ""
 
-#: llamaamp/ui/playlist_view.py:130
+#: llamaamp/ui/playlist_view.py:131
 msgid "Remove selected tracks (Delete) · Ctrl+Z to undo"
 msgstr ""
 
-#: llamaamp/ui/playlist_view.py:159
+#: llamaamp/ui/playlist_view.py:160
 msgid "Jump to File"
 msgstr ""
 
-#: llamaamp/ui/playlist_view.py:167
+#: llamaamp/ui/playlist_view.py:168
 msgid "Type to filter…  (Enter: play · Shift+Enter: queue)"
 msgstr ""
 
-#: llamaamp/ui/playlist_view.py:241
+#: llamaamp/ui/playlist_view.py:242
 msgid "No matches"
 msgstr ""
 
-#: llamaamp/ui/playlist_view.py:247
+#: llamaamp/ui/playlist_view.py:248
 #, python-brace-format
 msgid "{count} match"
 msgid_plural "{count} matches"
 msgstr[0] ""
 msgstr[1] ""
 
-#: llamaamp/ui/playlist_view.py:308
+#: llamaamp/ui/playlist_view.py:309
 msgid "Play Now"
 msgstr ""
 
-#: llamaamp/ui/playlist_view.py:313
+#: llamaamp/ui/playlist_view.py:314
 msgid "Play Next"
 msgstr ""
 
-#: llamaamp/ui/playlist_view.py:319
+#: llamaamp/ui/playlist_view.py:320
 msgid "Remove from Queue"
 msgstr ""
 
-#: llamaamp/ui/playlist_view.py:325
+#: llamaamp/ui/playlist_view.py:326
 msgid "File Info… (Alt+3)"
 msgstr ""
 
@@ -1356,40 +1356,40 @@ msgstr ""
 msgid "Classic Silver"
 msgstr ""
 
-#: llamaamp/ui/window.py:338
+#: llamaamp/ui/window.py:339
 msgid "Drag to resize"
 msgstr ""
 
-#: llamaamp/ui/window.py:339
+#: llamaamp/ui/window.py:340
 msgid "Resize window"
 msgstr ""
 
-#: llamaamp/ui/window.py:420
+#: llamaamp/ui/window.py:421
 msgid "EQUALIZER"
 msgstr ""
 
-#: llamaamp/ui/window.py:421
+#: llamaamp/ui/window.py:422
 msgid "PLAYLIST"
 msgstr ""
 
-#: llamaamp/ui/window.py:441
+#: llamaamp/ui/window.py:442
 #, python-brace-format
 msgid "Version {version}"
 msgstr ""
 
-#: llamaamp/ui/window.py:464
+#: llamaamp/ui/window.py:465
 msgid "Settings"
 msgstr ""
 
-#: llamaamp/ui/window.py:465
+#: llamaamp/ui/window.py:466
 msgid "Windowshade / restore (double-click title bar)"
 msgstr ""
 
-#: llamaamp/ui/window.py:466
+#: llamaamp/ui/window.py:467
 msgid "Minimize"
 msgstr ""
 
-#: llamaamp/ui/window.py:467
+#: llamaamp/ui/window.py:468
 msgid "Close"
 msgstr ""
 

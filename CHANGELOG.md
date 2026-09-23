@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.8 — 2026-09-23
 
 - Fixed: files whose names aren't valid UTF-8 (common in older collections)
   couldn't be added to the playlist, and one in the playlist stopped it from
