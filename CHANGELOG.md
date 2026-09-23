@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased
+
+- Inset LLAMA AMP wordmark with a recessed badge sourced from the application
+  version. Larger now-playing title, separate Volume/Balance groups, shorter EQ,
+  and track totals in the playlist header; seven complete rows fit at 560 × 740.
+- Distinct collapse, expand, detach and reattach icons with descriptive tooltips
+  and accessible names. EQ status distinguishes active presets/Custom, Off and
+  Direct Mode bypass; bypassed sliders remain editable with dimmed handles.
+- Playlist titles load from embedded metadata even when durations are already
+  cached. Filename fallback and full-path tooltips preserve file identification;
+  late results update duplicate rows without changing selection or queue order.
+- Playing, paused and stopped states now have distinct playlist/MPRIS behavior.
+  Stop clears the playback marker and pending seek; restored tracks start ready
+  and stopped.
+- Visible beveled resize grips with diagonal cursors on the player and detached
+  panels; the grip hides in windowshade mode.
+- Compact, resizable interface with beveled transport controls, collapsible and
+  detachable EQ/playlist panels, X11 panel snapping, and 48-pixel windowshade mode.
+- Dedicated 20-column spectrum with falling peak caps, time-based decay,
+  cached LED drawing, and automatic suspension when hidden or disabled.
+- Llama Green, Classic Silver and Amber themes, plus configurable analyzer colors,
+  peak visibility and falloff speed.
+- Accessible EQ/preamp sliders with zero marks, dB feedback, visible presets and
+  Reset. Direct Mode clearly indicates that stored EQ settings are bypassed.
+- One queue/navigation policy for Next, MPRIS and gapless playback, actual-playback
+  shuffle history, and stable session identities for duplicate playlist entries.
+- Now-playing title/art/metadata remain anchored while selecting playlist rows.
+  Correct 44.1 kHz and multichannel metadata; unknown properties remain unknown.
+- Compact playlist menus, queue positions, persistent playing marker, find counts,
+  and 20-level session Undo for playlist edits, including clear and replacement.
+- Focus-aware keyboard controls, layout/theme persistence, isolated data directory
+  support, and centralized worker/timer cleanup.
+- Behavioral and GTK/GStreamer integration tests in CI; updated screenshots.
+
 ## 1.4 — 2026-08-03
 
 - Flathub-ready Flatpak packaging: the manifest

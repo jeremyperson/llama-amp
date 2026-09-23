@@ -4,10 +4,51 @@
 [![CI](https://github.com/jeremyperson/llama-amp/actions/workflows/ci.yml/badge.svg)](https://github.com/jeremyperson/llama-amp/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A Winamp-inspired music player for Linux with a modern flat theme. Single-file
+A Winamp-inspired music player for Linux with compact, tactile controls. Single-file
 Python/GTK3/GStreamer — no build step, no framework, ~5000 lines that whip.
 
 ![Llama Amp](screenshots/llama-amp.png)
+
+## Classic interface
+
+The main display has a dedicated 20-column spectrum analyzer: fast-rising LED
+bars with bright peak caps that hold briefly and fall slowly. The ten-band EQ
+has separate keyboard-accessible sliders, zero marks, visible presets and Reset.
+The inset wordmark includes a recessed version badge. A shorter EQ and playlist
+header leave room for seven complete tracks at 560 × 740, with separate Volume
+and Balance groups and a larger now-playing title.
+
+- **Double-click the title bar** (or click ▱) for the narrow windowshade player.
+- **− / +** on each panel collapses/expands it; the adjacent window icon detaches
+  it and changes to a docking icon for reattachment. Each has a descriptive tooltip.
+  Detached panels snap within 12 pixels on X11. Drag the player to move panels
+  joined beneath it; hold Alt to separate them. Wayland uses explicit attachment
+  and independent windows. **Settings → View → Reset layout** restores the stack.
+- **Settings → Theme** switches between Llama Green, Classic Silver and Amber.
+  **Visualization** controls peak caps, colors and falloff speed.
+- Drag the visible grip in the lower-right corner to resize. The playlist grows
+  with the window; detached panels have the same grip.
+- **Add ▾** contains files, folders and stream URLs. **Playlist ▾** contains
+  saved playlists, export, missing-file removal, Clear and Undo.
+- **Ctrl+Z** undoes up to 20 playlist edits during the session. Restoring a cleared
+  playlist does not automatically start playback. Queue markers show play order;
+  **▶** means playing and **Ⅱ** means paused. Stopped tracks have no playback
+  marker, and selection stays independent of playback.
+- Playlist rows use embedded track titles when available, with the filename stem
+  as a fallback. Hover a row for its full path. Background title updates preserve
+  selection, duplicate entries, and the queue; search follows the displayed titles.
+- Click the clock for elapsed/remaining time. Double-click an EQ slider to reset
+  its gain or Balance to center it. Arrow keys adjust a focused slider or move
+  through the playlist; global seek/volume shortcuts apply elsewhere.
+- The EQ status shows the active preset or Custom, **Equalizer off**, or
+  **Bypassed · Direct Mode**. Bypassed sliders are dimmed but remain editable;
+  moving them stores settings for later. Direct Mode disables the EQ power button.
+
+[Classic Silver](screenshots/llama-amp-silver.png) ·
+[Amber](screenshots/llama-amp-amber.png) ·
+[Windowshade](screenshots/llama-amp-windowshade.png)
+
+Screenshots use demonstration track labels and generated test audio.
 
 ## Features
 
@@ -21,8 +62,8 @@ Python/GTK3/GStreamer — no build step, no framework, ~5000 lines that whip.
 - **ALSA direct output**: exclusive `hw:` access to your DAC, bypassing the
   PulseAudio/PipeWire mixer and its resampling — with automatic busy-device
   retry and graceful fallback
-- 10-band equalizer with presets (right-click the bars), live spectrum
-  analyzer with LED-ladder meters and per-band gain markers
+- 10-band equalizer with visible presets, plus a separate live spectrum
+  analyzer with segmented meters and falling peak caps
 - Shuffle by tracks or whole albums, tri-state repeat (off / all / one),
   sleep timer (after track or 15/30/60 min), stop-after-current
   (right-click the stop button)
@@ -30,7 +71,9 @@ Python/GTK3/GStreamer — no build step, no framework, ~5000 lines that whip.
 **Library & playlists**
 - Album art: embedded tags → folder art (`cover.jpg` etc.) → placeholder
 - Playlist with durations + total time, zebra striping, drag-reorder,
-  multi-select, type-to-search, and a Play Next queue (right-click)
+  multi-select, find-and-jump search, Undo, and a Play Next queue (right-click)
+- Shared navigation for Next, media keys and gapless playback; shuffle Previous
+  returns through playback history. Duplicate files remain distinct entries.
 - Named playlists, M3U import/export, recursive folder add,
   missing-file detection and cleanup
 - Drag & drop files or folders straight onto the window
@@ -67,6 +110,10 @@ In portable mode, settings live next to the script. Optional: install the
 [DSEG7 Classic](https://github.com/keshikan/DSEG) and
 [Orbitron](https://fonts.google.com/specimen/Orbitron) fonts (both OFL) for
 the authentic LED clock and wordmark — the app degrades gracefully without.
+
+For an isolated preview, set `LLAMAAMP_DATA_DIR` to a different writable directory.
+Existing settings and playlists remain compatible; layout and theme preferences
+are saved alongside them. Queue, Undo and shuffle history last for the session.
 
 ## Installing
 

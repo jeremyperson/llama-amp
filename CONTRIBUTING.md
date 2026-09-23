@@ -34,7 +34,10 @@ edit, relaunch, done.
 
 ## Before you open a PR
 
-1. `python3 -m py_compile musicPlayer.py` (this is what CI runs)
+1. `python3 -m py_compile musicPlayer.py`, then
+   `xvfb-run -a /usr/bin/python3 -m unittest discover -s tests -v`.
+   Tests use temporary data directories and silent GStreamer output;
+   `ffmpeg` generates MP3/FLAC fixtures. CI installs these test tools.
 2. `bash -n packaging/build-deb.sh` if you touched packaging
 3. Actually play music: local files *and* — if your change goes anywhere
    near the pipeline — an internet radio URL (`Ctrl+L`), gapless track

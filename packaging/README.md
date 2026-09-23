@@ -13,7 +13,7 @@ installed, otherwise downloaded automatically into `fonts-cache/`):
 
 Install (either):
 - Double-click `dist/llama-amp_*.deb` in your file manager → opens App Center → Install
-- Or: `sudo apt install ./dist/llama-amp_2.0_all.deb`
+- Or: `sudo apt install ./dist/llama-amp_*.deb`
 
 You get: `llama-amp` on the PATH, a launcher in your app grid ("Llama Amp"),
 "Open With → Llama Amp" for audio files, bundled LED/display fonts, and all
@@ -51,6 +51,13 @@ project, not a packaging step. If cross-platform ever matters, the pragmatic
 path is a rewrite of the UI layer, not a package of this one.
 
 ## Notes
+
+- Local preview packages may retain `APP_VERSION` until release preparation;
+  `dist/preview/` is used for the current unreleased interface preview. Launch
+  the checkout directly to try it without installing over a released package.
+- The Flatpak manifest pins a released Git commit. It will continue building that
+  release until the tag/commit is updated during release preparation. No new
+  runtime dependencies or additional application assets are required by the UI.
 
 - A portable checkout (running `musicPlayer.py` from a writable directory)
   stores config/playlist next to the script. Installed copies use

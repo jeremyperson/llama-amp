@@ -19,6 +19,8 @@ import queue
 import random
 import signal
 import threading
+import math
+import uuid
 from collections import OrderedDict, deque
 from contextlib import contextmanager
 from pathlib import Path
@@ -41,22 +43,23 @@ UPDATE_RECHECK_S = 86400         # long-running sessions re-check daily
 IS_FLATPAK = os.path.exists('/.flatpak-info')
 
 # ---- Tunables / constants ----
-WINDOW_W, WINDOW_H = 360, 500
+WINDOW_W, WINDOW_H = 560, 740
 POSITION_TIMER_MS = 100          # position/time UI refresh
 SAVE_DEBOUNCE_MS = 1000          # debounce for writing config.json
 DEFAULT_VOLUME = 0.7
 EQ_GAIN_MIN, EQ_GAIN_MAX = -24.0, 12.0   # equalizer-10bands band range (dB)
-SPECTRUM_BANDS = 10
-SPECTRUM_INTERVAL_NS = 66_000_000        # ~66 ms (15 fps; indistinguishable, 25% fewer wakeups)
+EQ_BANDS = 10
+SPECTRUM_BANDS = 512
+DISPLAY_BANDS = 20
+SPECTRUM_INTERVAL_NS = 33_000_000
 SPECTRUM_THRESHOLD = -80                 # dB floor for the analyzer
-SPECTRUM_DECAY = 0.18                    # how fast bars fall between updates
 EQ_FREQUENCIES = ['60', '170', '310', '600', '1K', '3K', '6K', '12K', '14K', '16K']
 REPEAT_OFF, REPEAT_ALL, REPEAT_ONE = 0, 1, 2
 SHUFFLE_OFF, SHUFFLE_TRACKS, SHUFFLE_ALBUMS = 0, 1, 2
 RG_MODES = ('off', 'track', 'album')
 LISTENBRAINZ_API = "https://api.listenbrainz.org"   # module-level: test-patchable
 NOTIFY_MIN_INTERVAL_S = 5
-ALBUM_ART_SIZE = 170                     # px, square art matching the info+time column height
+ALBUM_ART_SIZE = 72
 FOLDER_ART_NAMES = ('cover', 'folder', 'front', 'album', 'albumart')
 FOLDER_ART_EXTS = ('.jpg', '.jpeg', '.png', '.webp', '.gif')
 META_CACHE_LIMIT = 64                    # LRU caps: probed metadata / embedded art
@@ -64,10 +67,6 @@ FOLDER_ART_CACHE_LIMIT = 32              # per-directory folder art
 SEEK_STEP_SECONDS = 5                    # arrow-key seek step
 VOLUME_STEP = 0.05                       # arrow-key / scroll volume step
 URI_TARGET_INFO = 80                     # DnD info id for uri-list drops on the playlist
-
-# Track-skip pipe for prev/next buttons: scaled + raised to sit at the same
-# optical height as the small ◂/▸ triangles (which are ~55% of em, centered).
-PIPE_MARKUP = '<span size="60%" rise="3000">❙</span>'
 
 # Preamp: master gain ahead of the EQ bands (headroom for boosts), Winamp-style
 PREAMP_DB_RANGE = 12.0                   # slider spans ±12 dB, 0.5 = unity
@@ -148,13 +147,520 @@ MPRIS_XML = """
 # Initialize GStreamer
 Gst.init(None)
 
+class PlaybackOrder:
+    """Session identities, queue and actual playback history, independent of GTK."""
+    def __init__(self):
+        self.entries = []  # (session ID, path); duplicate paths remain distinct
+        self.queue = deque()
+        self.history = []
+        self.cursor = -1
+        self.current = None
+        self.failed = set()
+
+    def reconcile(self, entries):
+        self.entries = list(entries)
+        valid = {key for key, _ in self.entries}
+        self.queue = deque(key for key in self.queue if key in valid)
+
+    def next_id(self, playable, shuffle, repeat, auto=True, rng=random):
+        available = [(key, path) for key, path in self.entries
+                     if key not in self.failed and playable(path)]
+        valid = {key for key, _ in available}
+        if not valid:
+            return None
+        if auto and repeat == REPEAT_ONE and self.current in valid:
+            return self.current
+        for key in self.queue:
+            if key in valid:
+                return key
+        for key in self.history[self.cursor + 1:]:
+            if key in valid:
+                return key
+        if shuffle == SHUFFLE_TRACKS:
+            return rng.choice([key for key, _ in available if key != self.current]
+                              or list(valid))
+        indices = {key: i for i, (key, _) in enumerate(self.entries)}
+        index = indices.get(self.current, -1)
+        if shuffle == SHUFFLE_ALBUMS:
+            def album(path):
+                return path if path.startswith(('http://', 'https://')) else os.path.dirname(path)
+            current_album = album(self.entries[index][1]) if index >= 0 else None
+            after = [(key, path) for key, path in available if indices[key] > index]
+            if after and album(after[0][1]) == current_album:
+                return after[0][0]
+            runs = []
+            previous = None
+            for key, path in available:
+                group = album(path)
+                if group != previous:
+                    runs.append((key, group))
+                previous = group
+            return rng.choice([r for r in runs if r[1] != current_album] or runs)[0]
+        after = [key for key, _ in available if indices[key] > index]
+        return after[0] if after else (available[0][0] if repeat == REPEAT_ALL else None)
+
+    def previous_id(self, playable):
+        paths = dict(self.entries)
+        start = self.cursor
+        if start >= 0 and self.history[start] == self.current:
+            start -= 1
+        for index in range(start, -1, -1):
+            key = self.history[index]
+            if key in paths and key not in self.failed and playable(paths[key]):
+                self.cursor = index
+                self.current = key
+                return key
+        return self.current
+
+    def select(self, key):
+        # Navigation consumes queue entries even while paused; history records
+        # only tracks for which playback has actually been requested.
+        if key in self.queue:
+            self.queue.remove(key)
+            self.history = self.history[:self.cursor + 1]
+        self.current = key
+
+    def commit(self, key):
+        valid = dict(self.entries)
+        if key not in valid:
+            return
+        queued = key in self.queue
+        if queued:
+            self.queue.remove(key)
+        if self.cursor < 0 or self.history[self.cursor] != key:
+            forward = self.history[self.cursor + 1:]
+            if not queued and key in forward:
+                self.cursor += forward.index(key) + 1
+            else:
+                self.history = self.history[:self.cursor + 1] + [key]
+                self.history = self.history[-1000:]
+                self.cursor = len(self.history) - 1
+        self.current = key
+
+
+class AnalyzerState:
+    """Time-based ballistics. All levels are normalized to the display height."""
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.targets = [0.0] * DISPLAY_BANDS
+        self.levels = [0.0] * DISPLAY_BANDS
+        self.peaks = [0.0] * DISPLAY_BANDS
+        self.hold_until = [0.0] * DISPLAY_BANDS
+        self.last_input = None
+        self.last_tick = None
+
+    def feed(self, magnitudes, sample_rate, now):
+        if not magnitudes or not sample_rate or sample_rate <= 0:
+            return
+        nyquist = sample_rate / 2
+        top = min(20000.0, nyquist)
+        if top <= 40:
+            return
+        mapping_key = (len(magnitudes), sample_rate)
+        if getattr(self, '_mapping_key', None) != mapping_key:
+            step = nyquist / len(magnitudes)
+            edges = [40 * (top / 40) ** (i / DISPLAY_BANDS)
+                     for i in range(DISPLAY_BANDS + 1)]
+            self._ranges = []
+            for low, high in zip(edges, edges[1:]):
+                start = min(len(magnitudes) - 1, max(0, int(low / step)))
+                end = min(len(magnitudes), max(start + 1, int(math.ceil(high / step))))
+                self._ranges.append((start, end))
+            self._mapping_key = mapping_key
+        floor = 10 ** (SPECTRUM_THRESHOLD / 10)
+        powers = [floor if not math.isfinite(v) or v <= SPECTRUM_THRESHOLD
+                  else 1.0 if v >= 0 else 10 ** (v * .1) for v in magnitudes]
+        self.targets = [max(0.0, min(1.0,
+                            (10 * math.log10(sum(powers[start:end]) / (end - start))
+                             - SPECTRUM_THRESHOLD) / -SPECTRUM_THRESHOLD))
+                        for start, end in self._ranges]
+        self.last_input = now
+
+    def tick(self, now, playing=True, speed=1.0):
+        dt = 0 if self.last_tick is None else max(0, now - self.last_tick)
+        self.last_tick = now
+        active = playing and self.last_input is not None and now - self.last_input < .25
+        changed = False
+        for i, target in enumerate(self.targets):
+            target = target if active else 0.0
+            old, peak = self.levels[i], self.peaks[i]
+            level = max(target, old - 1.8 * speed * dt)
+            if level > peak or (level > 0 and target >= peak):
+                peak = level
+                self.hold_until[i] = now + .25
+            else:
+                fall_time = min(dt, max(0, now - self.hold_until[i]))
+                peak = max(level, peak - .65 * speed * fall_time)
+            changed |= abs(level - old) > 1e-6 or abs(peak - self.peaks[i]) > 1e-6
+            self.levels[i], self.peaks[i] = level, peak
+        return changed
+
+
+class SettingsStore:
+    """Atomic persistence shared by settings, playlists and duration caches."""
+    @staticmethod
+    def write(path, data, binary=False):
+        tmp = path + '.tmp'
+        try:
+            with open(tmp, 'wb' if binary else 'w', **({} if binary else {'encoding': 'utf-8'})) as stream:
+                stream.write(data)
+            os.replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+
+
+class MainLoopTasks:
+    """One lifetime for timers and cross-thread callbacks owned by the player."""
+    def __init__(self):
+        self.ids = set()
+        self.closed = False
+        self.lock = threading.RLock()
+
+    def _add(self, factory, prefix, callback, args):
+        with self.lock:
+            if self.closed:
+                return None
+            handle = [None]
+            def invoke():
+                with self.lock:
+                    if self.closed:
+                        return False
+                keep = False
+                try:
+                    keep = bool(callback(*args))
+                    return keep
+                finally:
+                    if not keep:
+                        with self.lock:
+                            self.ids.discard(handle[0])
+            handle[0] = factory(*prefix, invoke)
+            self.ids.add(handle[0])
+            return handle[0]
+
+    def idle_add(self, callback, *args):
+        return self._add(GLib.idle_add, (), callback, args)
+
+    def timeout_add(self, interval, callback, *args):
+        return self._add(GLib.timeout_add, (interval,), callback, args)
+
+    def timeout_add_seconds(self, interval, callback, *args):
+        return self._add(GLib.timeout_add_seconds, (interval,), callback, args)
+
+    def unix_signal_add(self, priority, sig, callback):
+        return self._add(GLib.unix_signal_add, (priority, sig), callback, ())
+
+    def source_remove(self, handle):
+        with self.lock:
+            if handle in self.ids:
+                GLib.source_remove(handle)
+                self.ids.discard(handle)
+
+    def close(self):
+        with self.lock:
+            self.closed = True
+            for handle in list(self.ids):
+                self.source_remove(handle)
+
+
+class MetadataWorker:
+    """One worker and one queue; no GTK state is accessed by dispatch itself."""
+    def __init__(self, handlers, on_error):
+        self.queue = queue.Queue()
+        self.handlers = handlers
+        self.on_error = on_error
+        self.closed = threading.Event()
+        self.thread = threading.Thread(target=self._run, name='llama-metadata', daemon=True)
+        self.thread.start()
+
+    def _run(self):
+        while not self.closed.is_set():
+            job = self.queue.get()
+            if job is None or self.closed.is_set():
+                break
+            try:
+                self.handlers[job[0]](*job[1:])
+            except Exception as exc:
+                self.on_error(f'Metadata worker: {type(exc).__name__}')
+
+    def close(self):
+        self.closed.set()
+        self.queue.put(None)
+
+
+THEMES = {
+    'green': dict(name='Llama Green', chassis='#101510', panel='#1b231c', control='#303b31',
+                  text='#d8e5d7', accent='#52ef34', lcd='#081007', stripe='#111d12', palette='green'),
+    'silver': dict(name='Classic Silver', chassis='#272936', panel='#36394a', control='#adb3bd',
+                   text='#eeeeef', accent='#8cfa65', lcd='#060b08', stripe='#171d1a', palette='classic'),
+    'amber': dict(name='Amber', chassis='#191510', panel='#292219', control='#463b2d',
+                  text='#f0e0c5', accent='#ffba45', lcd='#100c04', stripe='#211a10', palette='amber'),
+}
+
+class PanelManager:
+    """Owns auxiliary windows and reparents their live controls when attached."""
+    def __init__(self, app, host):
+        self.app, self.host = app, host
+        self.items = {}
+        self.x11 = 'X11' in Gdk.Display.get_default().__gtype__.name
+        self.drag = None
+        self.settle_id = None
+
+    def add(self, name, title, content, expand=False):
+        saved = self.app.config['panels'].get(name, {})
+        if not isinstance(saved, dict):
+            saved = {}
+        frame = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        frame.get_style_context().add_class('music-player-frame')
+        frame.set_no_show_all(True)
+        header = Gtk.EventBox()
+        header.get_style_context().add_class('panel-header')
+        row = Gtk.Box(spacing=4)
+        caption = Gtk.Label(label=title, xalign=0)
+        caption.get_style_context().add_class('music-player-label')
+        caption.set_ellipsize(Pango.EllipsizeMode.END)
+        row.pack_start(caption, True, True, 0)
+        if name == 'playlist':
+            row.pack_start(self.app.playlist_info, False, False, 6)
+        collapse = self.app._panel_button(name, 'collapse')
+        collapse.set_tooltip_text('Collapse / expand ' + title.lower())
+        collapse.connect('clicked', lambda *_: self.collapse(name))
+        row.pack_start(collapse, False, False, 0)
+        detach = self.app._panel_button(name, 'detach')
+        detach.set_tooltip_text('Detach / attach ' + title.lower())
+        detach.connect('clicked', lambda *_: self.toggle_attach(name))
+        row.pack_start(detach, False, False, 0)
+        header.add(row)
+        header.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        header.connect('button-press-event', self._header_press, name)
+        frame.pack_start(header, False, False, 0)
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        body.set_no_show_all(True)
+        body.pack_start(content, True, True, 0)
+        frame.pack_start(body, True, True, 0)
+        slot = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        slot.set_no_show_all(True)
+        self.host.pack_start(slot, expand, expand, 0)
+        slot.pack_start(frame, True, True, 0)
+        item = dict(frame=frame, body=body, slot=slot, window=None,
+                    collapse=collapse, detach=detach, title=title, expand=expand,
+                    visible=saved.get('visible') is not False,
+                    collapsed=saved.get('collapsed') is True,
+                    attached=saved.get('attached') is not False,
+                    size=saved.get('size', [560, 240]), position=saved.get('position'),
+                    snap_to=saved.get('snap_to') if self.x11 and saved.get('snap_to') in ('main', 'eq', 'playlist') and saved.get('snap_to') != name else None)
+        self.items[name] = item
+        content.show_all()
+        header.show_all()
+
+    def restore(self):
+        for name, item in self.items.items():
+            if not item['attached']:
+                self._detach(name)
+            self._show(name)
+
+    def _show(self, name):
+        item = self.items[name]
+        visible = item['visible'] and not self.app._windowshade
+        self._update_controls(name)
+        item['body'].set_visible(not item['collapsed'])
+        self.host.set_child_packing(item['slot'], item['expand'] and not item['collapsed'],
+                                    item['expand'] and not item['collapsed'], 0, Gtk.PackType.START)
+        item['frame'].set_visible(visible)
+        item['slot'].set_visible(visible and item['attached'])
+        if item['window']:
+            item['window'].set_visible(visible and not item['attached'])
+
+    def _update_controls(self, name):
+        item = self.items[name]
+        for key, verb in [('collapse', 'Expand' if item['collapsed'] else 'Collapse'),
+                          ('detach', 'Detach' if item['attached'] else 'Reattach')]:
+            text = f"{verb} {item['title'].lower()}"
+            item[key].set_tooltip_text(text)
+            item[key].get_accessible().set_name(text)
+            item[key].queue_draw()
+
+    def set_visible(self, name, visible):
+        self.items[name]['visible'] = visible
+        self._show(name)
+        self.app.schedule_save_config()
+
+    def collapse(self, name):
+        item = self.items[name]
+        item['collapsed'] = not item['collapsed']
+        self._show(name)
+        self.app.schedule_save_config()
+
+    def toggle_attach(self, name):
+        item = self.items[name]
+        if item['attached']:
+            self._detach(name)
+        else:
+            frame = item['frame']
+            frame.get_parent().remove(frame)
+            item['slot'].pack_start(frame, True, True, 0)
+            item['window'].hide()
+            item['attached'] = True
+            item['snap_to'] = None
+            self._update_controls(name)
+        self._show(name)
+        self.app.schedule_save_config()
+
+    def _detach(self, name):
+        item = self.items[name]
+        if item['window'] is None:
+            window = Gtk.Window(title=f"{self.app.get_title()} — {item['title']}")
+            window.set_decorated(False)
+            window.set_transient_for(self.app)
+            window.set_destroy_with_parent(True)
+            window.get_style_context().add_class('llama-window')
+            shell = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            shell.get_style_context().add_class('music-player-main')
+            self.app._add_resize_grip(window, shell)
+            shell.show()
+            window.connect('delete-event', lambda *_: (self.set_visible(name, False), True)[1])
+            window.connect('key-press-event', self.app.on_window_key_press)
+            window.connect('configure-event', self._configured, name)
+            window.connect('button-press-event', self.app._resize_press)
+            window.set_geometry_hints(None, self.app._minimum_geometry(80), Gdk.WindowHints.MIN_SIZE)
+            width, height = self.app._clamp_size(item['size'], minimum_height=80)
+            window.set_default_size(width, height)
+            if self.x11 and self.app._valid_pair(item['position']):
+                window.move(*self.app._clamp_position(item['position']))
+            item['window'] = window
+            item['shell'] = shell
+        frame = item['frame']
+        frame.get_parent().remove(frame)
+        item['shell'].pack_start(frame, True, True, 0)
+        item['attached'] = False
+        self._update_controls(name)
+
+    def _header_press(self, widget, event, name):
+        item = self.items[name]
+        if event.button == 1 and event.type == Gdk.EventType.DOUBLE_BUTTON_PRESS:
+            self.collapse(name)
+            return True
+        if event.button == 1 and not item['attached']:
+            window = item['window']
+            self.start_drag(window, event)
+            window.begin_move_drag(event.button, int(event.x_root), int(event.y_root), event.time)
+            return True
+        return False
+
+    def windows(self):
+        return {'main': self.app, **{name: item['window'] for name, item in self.items.items()
+                                    if item['window'] and not item['attached'] and item['visible']}}
+
+    def start_drag(self, window, event):
+        if not self.x11:
+            return
+        windows = self.windows()
+        root = next((name for name, win in windows.items() if win == window), 'main')
+        if event.state & Gdk.ModifierType.MOD1_MASK:
+            if root != 'main':
+                self.items[root]['snap_to'] = None
+            for item in self.items.values():
+                if item['snap_to'] == root:
+                    item['snap_to'] = None
+        members = {root}
+        for _ in self.items:
+            for name, item in self.items.items():
+                if item['snap_to'] in members and name in windows:
+                    members.add(name)
+        self.drag = (root, {name: windows[name].get_position() for name in members})
+        self._drag_alt = bool(event.state & Gdk.ModifierType.MOD1_MASK)
+
+    def _configured(self, window, event, name):
+        item = self.items[name]
+        item['size'] = [event.width, event.height]
+        if self.x11:
+            item['position'] = list(window.get_position())
+        self.configured(name)
+        return False
+
+    def configured(self, name):
+        if not self.x11 or not self.drag or self.drag[0] != name:
+            return
+        root, origins = self.drag
+        windows = self.windows()
+        if root not in windows:
+            return
+        x, y = windows[root].get_position()
+        ox, oy = origins[root]
+        for member, (mx, my) in origins.items():
+            if member != root and member in windows:
+                windows[member].move(mx + x - ox, my + y - oy)
+        if self.settle_id is not None:
+            self.app.tasks.source_remove(self.settle_id)
+        self.settle_id = self.app.tasks.timeout_add(180, self._settle)
+
+    def _settle(self):
+        if self.drag and not self.app._destroyed:
+            pointer = Gdk.Display.get_default().get_default_seat().get_pointer()
+            state = self.app.get_window().get_device_position(pointer)[-1]
+            if state & Gdk.ModifierType.BUTTON1_MASK:
+                return True  # keep moving the group through pauses in a drag
+        self.settle_id = None
+        drag, self.drag = self.drag, None
+        if not drag or self.app._destroyed:
+            return False
+        root, origins = drag
+        windows = self.windows()
+        if root != 'main' and root in windows and not self._drag_alt:
+            moving = windows[root]
+            x, y = moving.get_position()
+            w, h = moving.get_size()
+            best = None
+            for target, window in windows.items():
+                if target in origins:
+                    continue
+                tx, ty = window.get_position()
+                tw, th = window.get_size()
+                candidates = []
+                if x < tx + tw and x + w > tx:
+                    candidates.extend([(abs(y - ty - th), x, ty + th),
+                                       (abs(y + h - ty), x, ty - h)])
+                if y < ty + th and y + h > ty:
+                    candidates.extend([(abs(x - tx - tw), tx + tw, y),
+                                       (abs(x + w - tx), tx - w, y)])
+                for distance, nx, ny in candidates:
+                    if distance <= 12 and (best is None or distance < best[0]):
+                        best = (distance, nx, ny, target)
+            self.items[root]['snap_to'] = best[3] if best else None
+            if best:
+                moving.move(best[1], best[2])
+        self.app.schedule_save_config()
+        return False
+
+    def snapshot(self):
+        return {name: {key: item[key] for key in ('visible', 'collapsed', 'attached', 'size', 'position', 'snap_to')}
+                for name, item in self.items.items()}
+
+    def reset(self):
+        for name, item in self.items.items():
+            if not item['attached']:
+                self.toggle_attach(name)
+            item.update(visible=True, collapsed=False, snap_to=None)
+            self._show(name)
+
+    def close(self):
+        if self.settle_id is not None:
+            self.app.tasks.source_remove(self.settle_id)
+        for item in self.items.values():
+            if item['window']:
+                item['window'].destroy()
+
+
 class MusicPlayer(Gtk.Window):
     def __init__(self):
         super().__init__(title=APP_NAME)
+        self.tasks = MainLoopTasks()
         
         # Window setup
         self.set_default_size(WINDOW_W, WINDOW_H)
-        self.set_resizable(False)
+        self.set_resizable(True)
         self.set_position(Gtk.WindowPosition.CENTER)
         
         # Remove window decorations to create custom title bar
@@ -176,6 +682,7 @@ class MusicPlayer(Gtk.Window):
         self.player = Gst.ElementFactory.make("playbin", "player")
         self.current_song = None
         self.is_playing = False
+        self.playback_state = 'Stopped'
         self.playlist = []
         self.current_index = 0
         self.position = 0
@@ -192,7 +699,8 @@ class MusicPlayer(Gtk.Window):
         self.rgvolume = None
 
         # Live analyzer levels (drive the EQ bar heights; separate from eq gains)
-        self.spectrum_levels = [0.0] * SPECTRUM_BANDS
+        self.analyzer_state = AnalyzerState()
+        self._analyzer_id = None
 
         # Title-bar drag state (initialised so motion before press can't AttributeError)
         self.drag_start_x = 0
@@ -205,6 +713,8 @@ class MusicPlayer(Gtk.Window):
         self._pending_seek_ns = None
         self._reordering = False        # a resync is scheduled (debounce)
         self._suppress_store = False     # programmatic store edits (don't resync)
+        self._playlist_titles = {}  # path -> tagged title, or None after probing
+        self._title_rows = {}       # path -> persistent GTK row references
         self._meta_cache = OrderedDict()         # path -> props dict, or False (probe failed)
         self._art_cache = OrderedDict()          # path -> embedded-art GdkPixbuf
         self._folder_art_cache = OrderedDict()   # dir  -> folder-art GdkPixbuf or None
@@ -217,21 +727,24 @@ class MusicPlayer(Gtk.Window):
         self._drop_feedback_id = None
         self._default_art = None
         self._default_art_loaded = False
-        self._play_next = deque()       # paths queued via "Play Next" (session-only)
+        self.order = PlaybackOrder()
+        self.entry_ids = []
+        self._play_next = self.order.queue
+        self._undo = deque(maxlen=20)
+        self._undoing = False
+        self._gapless_lock = threading.RLock()
+        self._next_snapshot = None
+        self._next_generation = 0
         self._search_pos = -1           # last playlist-search hit index
 
         # Single background worker drains all metadata probes + folder-art scans:
         # bounded concurrency no matter how fast the user scrolls the playlist.
-        self._probe_queue = queue.Queue()
-        self._probe_inflight = set()    # paths queued/probing (main thread only)
-        threading.Thread(target=self._probe_loop, daemon=True).start()
+        self._probe_inflight = set()
+        self.metadata_worker = MetadataWorker({'meta': self._probe_one, 'folderart': self._folder_art_scan}, self.log_debug)
+        self._probe_queue = self.metadata_worker.queue
 
         # Audio properties for dynamic display
-        self.audio_properties = {
-            'sample_rate': 44100,
-            'bitrate': 128,
-            'channels': 2
-        }
+        self.audio_properties = {'sample_rate': 0, 'bitrate': 0, 'channels': 0}
 
         # Restore saved settings (volume/balance/eq/shuffle/repeat/last track)
         self.load_config()
@@ -266,13 +779,13 @@ class MusicPlayer(Gtk.Window):
 
         # Clean shutdown (config + playlist save) on SIGTERM/SIGINT too
         for sig in (signal.SIGTERM, signal.SIGINT):
-            GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, self._on_unix_signal)
+            self.tasks.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, self._on_unix_signal)
 
         # Set up drag and drop
         self.setup_drag_and_drop()
 
         # Timer for updating position
-        self._timeout_ids.append(GLib.timeout_add(POSITION_TIMER_MS, self.update_position))
+        self._timeout_ids.append(self.tasks.timeout_add(POSITION_TIMER_MS, self.update_position))
 
         # Track-length sidecar, then the saved playlist (rows read the cache)
         self._load_durations()
@@ -293,9 +806,9 @@ class MusicPlayer(Gtk.Window):
         self._update_info = None
         if not IS_FLATPAK:
             if self.config.get("update_check", True) is not False:
-                GLib.timeout_add_seconds(UPDATE_CHECK_DELAY_S,
+                self.tasks.timeout_add_seconds(UPDATE_CHECK_DELAY_S,
                                          self._startup_update_check)
-            self._timeout_ids.append(GLib.timeout_add_seconds(
+            self._timeout_ids.append(self.tasks.timeout_add_seconds(
                 UPDATE_RECHECK_S, self._periodic_update_check))
 
     # ==================== Real audio DSP (EQ / balance / spectrum) ====================
@@ -379,6 +892,7 @@ class MusicPlayer(Gtk.Window):
         """Attach the filter bin matching the current direct_mode (NULL state only)."""
         bin_ = self.build_audio_filter(analyzer_only=self.direct_mode)
         self.player.set_property("audio-filter", bin_)
+        self._update_analyzer_visibility()
         if not self.direct_mode and self.equalizer is not None:
             self.apply_all_eq()
             if self.panorama is not None:
@@ -389,6 +903,7 @@ class MusicPlayer(Gtk.Window):
         """Rebuild the audio-filter chain and resume the current track at the
         same position. playbin's audio-filter only changes in the NULL state,
         so this is the shared machinery for Direct Mode and ReplayGain toggles."""
+        self._invalidate_next()
         was_playing = self.is_playing
         resume_ns = self._current_position_ns()
 
@@ -545,6 +1060,7 @@ class MusicPlayer(Gtk.Window):
     def _alsa_reacquire(self):
         """(Re)build the alsasink from config and start the async acquire flow.
         Used by the ALSA toggle and by device-picker changes."""
+        self._invalidate_next()
         sink = self._make_alsa_sink()
         if sink is None:
             self.alsa_output = False
@@ -560,7 +1076,7 @@ class MusicPlayer(Gtk.Window):
         self.player.set_state(Gst.State.NULL)
         self.player.set_property("audio-sink", sink)
         self.show_drop_feedback(f"Acquiring {self._alsa_device}…")
-        GLib.timeout_add(400, self._alsa_try_start)
+        self.tasks.timeout_add(400, self._alsa_try_start)
 
     def _alsa_try_start(self):
         ctx = self._alsa_ctx
@@ -578,7 +1094,7 @@ class MusicPlayer(Gtk.Window):
                 if ctx['tries'] < 5:
                     self.show_drop_feedback(
                         f"DAC busy — waiting for release ({ctx['tries']}/5)…")
-                    GLib.timeout_add(1800, self._alsa_try_start)
+                    self.tasks.timeout_add(1800, self._alsa_try_start)
                     return False
                 # Give up: revert to the mixer
                 dev = self._alsa_device
@@ -687,24 +1203,21 @@ class MusicPlayer(Gtk.Window):
         return None
 
     def on_spectrum_message(self, structure):
-        """Drive EQ bar heights from real analyzer magnitudes (rise fast, decay smooth)."""
+        if not self._analyzer_visible():
+            return
         mags = self._parse_magnitudes(structure)
         if not mags:
             return
-        n = min(len(mags), len(self.spectrum_levels))
-        for i in range(n):
-            norm = (float(mags[i]) - SPECTRUM_THRESHOLD) / (0.0 - SPECTRUM_THRESHOLD)
-            norm = max(0.0, min(1.0, norm))
-            old = self.spectrum_levels[i]
-            if norm >= old:
-                self.spectrum_levels[i] = norm
-            else:
-                self.spectrum_levels[i] = max(norm, old - SPECTRUM_DECAY)
-            # Only repaint bars that moved visibly
-            if abs(self.spectrum_levels[i] - old) > 0.01 and i < len(self.eq_bars):
-                self.eq_bars[i].queue_draw()
+        rate = self.audio_properties.get('sample_rate') or 0
+        if self.spectrum:
+            caps = self.spectrum.get_static_pad('sink').get_current_caps()
+            if caps and caps.get_size():
+                ok, negotiated = caps.get_structure(0).get_int('rate')
+                if ok:
+                    rate = negotiated
+        self.analyzer_state.feed(mags, rate, time.monotonic())
+        self._start_decay()
 
-    # ==================== GStreamer bus ====================
     def setup_bus(self):
         self._error_streak = 0
         bus = self.player.get_bus()
@@ -742,18 +1255,21 @@ class MusicPlayer(Gtk.Window):
             self._switching_output = True
             self.player.set_state(Gst.State.NULL)
             self.show_drop_feedback("DAC busy — waiting for release…")
-            GLib.timeout_add(1500, self._alsa_try_start)
+            self.tasks.timeout_add(1500, self._alsa_try_start)
             return
         err, dbg = message.parse_error()
         self.log_debug(f"GStreamer error: {err} ({dbg})")
+        was_playing = self.is_playing
+        self.order.failed.add(self.order.current)
+        self._invalidate_next()
         self.player.set_state(Gst.State.NULL)
-        self._sync_play_ui(False)
+        self._sync_play_ui(False, stopped=True)
         self.info_label.set_text(f"⚠ {err.message}")
         # Skip past a bad track if we were playing, guarding against an all-bad loop.
         self._error_streak += 1
-        if self.playlist and self._error_streak < len(self.playlist):
+        if was_playing and self.playlist and self._error_streak < len(self.playlist):
             # after_error: never let REPEAT_ONE replay a broken track in a loop
-            GLib.idle_add(lambda: (self.advance_track(auto=True, after_error=True), False)[1])
+            self.tasks.idle_add(lambda: (self.advance_track(auto=True, after_error=True), False)[1])
 
     def on_bus_eos(self, bus, message):
         # Only fires when the gapless handoff declined (repeat-one, sleep,
@@ -761,25 +1277,14 @@ class MusicPlayer(Gtk.Window):
         self.advance_track(auto=True)
 
     def _on_about_to_finish(self, playbin):
-        """GStreamer streaming thread: decide the next track and hand its uri
-        to playbin for gapless playback. ONLY reads state + sets the uri —
-        all bookkeeping happens at handoff (on_bus_stream_start, main loop)."""
-        if (not self.gapless or self.repeat_mode == REPEAT_ONE
-                or self._sleep_after_track):
-            return  # decline: let EOS fire and advance_track do its thing
-        if self._loading or getattr(self, '_switching_output', False):
-            # The main thread is rebuilding the pipeline (manual track load or
-            # output/filter swap); setting the uri now would race that setup
-            # and can wedge the preroll in READY.
-            return
-        nxt = self._peek_next_index(auto=True)
-        if nxt is None:
-            return  # end of playlist: normal EOS/stop
-        path = self.playlist[nxt]
-        uri = (path if self._is_stream_url(path)
-               else Gst.filename_to_uri(os.path.abspath(path)))
-        self._gapless_next = (nxt, path, uri)
-        playbin.set_property("uri", uri)
+        # Streaming thread: only a protected, precomputed decision is accessed.
+        with self._gapless_lock:
+            snapshot = self._next_snapshot
+            if snapshot is None or self._gapless_next is not None:
+                return
+            self._gapless_next = snapshot
+            self._next_snapshot = None
+            playbin.set_property('uri', snapshot[2])
 
     def on_bus_buffering(self, bus, message):
         """Network-stream buffering: pause below 100% and resume at 100%,
@@ -804,11 +1309,15 @@ class MusicPlayer(Gtk.Window):
         """Gapless handoff commit: the prerolled track is now the live stream."""
         if self._gapless_next is None:
             return  # ordinary load_song start
-        idx, path, uri = self._gapless_next
+        key, path, uri, generation = self._gapless_next
+        if self.player.get_property('current-uri') != uri:
+            return  # an earlier stream-start was still queued on the main loop
         self._gapless_next = None
-        if self._play_next and self._play_next[0] == path:
-            self._play_next.popleft()
-            self._update_queue_markers()
+        if generation != self._next_generation or key not in self.entry_ids:
+            return
+        idx = self.entry_ids.index(key)
+        self._load_gen += 1
+        self.order.commit(key)
         self.current_index = idx
         self.current_song = path
         self._loaded_uri = uri          # re-arms the stale-tag guard
@@ -832,13 +1341,16 @@ class MusicPlayer(Gtk.Window):
             secs = self._duration_seconds(path)
             if secs:
                 self.duration = secs * Gst.SECOND
+            generation = self._load_gen
             def requery():
+                if self._destroyed or generation != self._load_gen:
+                    return False
                 ok2, d2 = self.player.query_duration(Gst.Format.TIME)
                 if ok2 and d2 > 0:
                     self.duration = d2
                     self._note_duration(path, d2 // Gst.SECOND)
                 return False
-            GLib.timeout_add(200, requery)
+            self.tasks.timeout_add(200, requery)
         self._read_caps_props()         # caps may renegotiate (rate change)
         self._post_load_ui(idx, path)
 
@@ -955,19 +1467,18 @@ class MusicPlayer(Gtk.Window):
         except Exception as e:
             self.log_debug(f"caps read failed: {e}")
 
-    def _sync_play_ui(self, playing):
-        self.is_playing = playing
-        if playing:
-            self.play_btn.set_label("❚❚")
-            self.play_btn.set_tooltip_text("Pause")
-            self.play_btn.get_style_context().add_class('active')
-        else:
-            self.play_btn.set_label("▸")
-            self.play_btn.set_tooltip_text("Play")
-            self.play_btn.get_style_context().remove_class('active')
-            self._start_decay()  # let the bars fall to rest, then stop ticking
+    def _sync_play_ui(self, playing, *, stopped=False):
+        self.playback_state = 'Playing' if playing else 'Stopped' if stopped else 'Paused'
+        self.is_playing = bool(playing)
+        self.play_btn.queue_draw()
+        self.shade_controls.queue_draw()
+        context = self.play_btn.get_style_context()
+        (context.add_class if playing else context.remove_class)('active')
+        self.play_btn.set_tooltip_text('Pause (Space)' if playing else 'Play (Space)')
+        self._update_queue_markers()
+        self._start_decay()
         if getattr(self, '_tray_play_item', None) is not None:
-            self._tray_play_item.set_label("Pause" if playing else "Play")
+            self._tray_play_item.set_label('Pause' if playing else 'Play')
         self._mpris_notify_playback()
 
     def _mpris_notify_playback(self):
@@ -988,9 +1499,10 @@ class MusicPlayer(Gtk.Window):
         (ctx.add_class if self._sleep_after_track else ctx.remove_class)('active')
 
     def _set_sleep(self, mode):
+        self._invalidate_next()
         """Arm/disarm the sleep timer. mode: None (off), 'track', or minutes."""
         if self._sleep_timer_id is not None:
-            GLib.source_remove(self._sleep_timer_id)
+            self.tasks.source_remove(self._sleep_timer_id)
             self._sleep_timer_id = None
         self._sleep_after_track = False
         self._sleep_deadline = None
@@ -999,12 +1511,13 @@ class MusicPlayer(Gtk.Window):
             self._sleep_after_track = True
             self.show_drop_feedback("Sleeping after this track")
         elif isinstance(mode, int) and mode > 0:
-            self._sleep_timer_id = GLib.timeout_add_seconds(mode * 60, self._sleep_fire)
+            self._sleep_timer_id = self.tasks.timeout_add_seconds(mode * 60, self._sleep_fire)
             self._sleep_deadline = GLib.get_monotonic_time() + mode * 60 * 1_000_000
             self.show_drop_feedback(f"Sleeping in {mode} min")
         else:
             self.show_drop_feedback("Sleep timer off")
         self._update_stop_btn_cue()
+        self._prepare_next()
 
     def _sleep_fire(self):
         self._sleep_timer_id = None
@@ -1028,9 +1541,7 @@ class MusicPlayer(Gtk.Window):
             self._sleep_after_track = False
             self._sleep_mode = None
             self._update_stop_btn_cue()
-            self.player.set_state(Gst.State.PAUSED)
-            self.player.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH, 0)
-            self._sync_play_ui(False)
+            self.stop_song(None)
             self.show_drop_feedback("Sleep timer — stopped after track")
             return
         if auto and self.repeat_mode == REPEAT_ONE and not after_error:
@@ -1038,96 +1549,16 @@ class MusicPlayer(Gtk.Window):
             self.player.set_state(Gst.State.PLAYING)
             return
 
-        nxt = self._peek_next_index(auto=auto)
-        if nxt is None:
-            playable = [i for i, p in enumerate(self.playlist)
-                        if self._playable(p)]
-            if not playable:
-                self.current_song = None
-                self._set_title_text("❌ No available files in playlist")
-                self.info_label.set_text("All files are missing - please re-add music files")
-            self.stop_song(None)
-            return
-        # Consume the queue head if that's what the resolver picked
-        if self._play_next and self._play_next[0] == self.playlist[nxt]:
-            self._play_next.popleft()
-            self._update_queue_markers()
-        self.load_song(nxt)
-        self._play_current()
+        self._navigate(auto=auto, after_error=after_error)
 
-    def _peek_next_index(self, auto=True):
-        """Resolve the next track index: Play-Next queue first (pruning dead
-        entries without popping the live head), then shuffle/repeat order.
-        Returns None when playback should stop."""
-        while self._play_next:
-            p = self._play_next[0]
-            if p in self.playlist and (self._is_stream_url(p) or os.path.exists(p)):
-                return self.playlist.index(p)
-            self._play_next.popleft()  # gone from playlist or disk: prune
-
-        playable = [i for i, p in enumerate(self.playlist)
-                    if self._playable(p)]
-        if not playable:
-            return None
-        if self.shuffle == SHUFFLE_TRACKS:
-            choices = [i for i in playable if i != self.current_index] or playable
-            return random.choice(choices)
-        if self.shuffle == SHUFFLE_ALBUMS:
-            return self._album_next_index(playable)
-        after = [i for i in playable if i > self.current_index]
-        if after:
-            return after[0]
-        if self.repeat_mode == REPEAT_ALL or not auto:
-            return playable[0]
-        return None
-
-    def _album_key(self, path):
-        """Album identity for shuffle-by-album: the containing directory
-        (each stream URL counts as its own album)."""
-        if self._is_stream_url(path):
-            return path
-        return os.path.dirname(os.path.abspath(path))
-
-    def _album_runs(self, playable):
-        """Group playable indices into runs of consecutive same-album tracks."""
-        runs = []
-        for i in playable:
-            key = self._album_key(self.playlist[i])
-            if runs and runs[-1][0] == key and runs[-1][1][-1] == i - 1:
-                runs[-1][1].append(i)
-            else:
-                runs.append((key, [i]))
-        return runs
-
-    def _album_next_index(self, playable):
-        """Album shuffle: play sequentially within the current album run; at
-        its end jump to a random other album's first track."""
-        cur_key = (self._album_key(self.playlist[self.current_index])
-                   if 0 <= self.current_index < len(self.playlist) else None)
-        nxt = self.current_index + 1
-        if nxt in playable and self._album_key(self.playlist[nxt]) == cur_key:
-            return nxt
-        runs = self._album_runs(playable)
-        others = [r for r in runs if r[0] != cur_key] or runs
-        return random.choice(others)[1][0]
-
-    def _album_prev_index(self, playable):
-        """Album shuffle, backwards: sequential-previous within the album; at
-        the album's first track jump to a random other album's first track."""
-        cur_key = (self._album_key(self.playlist[self.current_index])
-                   if 0 <= self.current_index < len(self.playlist) else None)
-        prv = self.current_index - 1
-        if prv in playable and self._album_key(self.playlist[prv]) == cur_key:
-            return prv
-        runs = self._album_runs(playable)
-        others = [r for r in runs if r[0] != cur_key] or runs
-        return random.choice(others)[1][0]
-
-    # ==================== Persistence (config.json) ====================
     def _data_dir(self):
         """Where config.json/playlist.txt live. Portable mode: next to the
         script when its directory is writable (the classic ~/Apps setup).
         Installed mode (/usr is read-only): ~/.config/llamaamp/."""
+        override = os.environ.get('LLAMAAMP_DATA_DIR')
+        if override:
+            os.makedirs(override, exist_ok=True)
+            return override
         app_dir = os.path.dirname(os.path.abspath(__file__))
         if os.access(app_dir, os.W_OK):
             return app_dir
@@ -1191,7 +1622,7 @@ class MusicPlayer(Gtk.Window):
             it = self.playlist_store.iter_next(it)
         self.update_playlist_info()
         if self._durations_save_id is None:
-            self._durations_save_id = GLib.timeout_add(2000, self._save_durations)
+            self._durations_save_id = self.tasks.timeout_add(2000, self._save_durations)
 
     def _duration_seconds(self, path):
         """Cached duration in seconds, or None (mtime-validated)."""
@@ -1220,13 +1651,13 @@ class MusicPlayer(Gtk.Window):
         h, m = secs // 3600, (secs % 3600) // 60
         return f"{h}h {m:02d}m" if h else f"{m}m"
 
-    def _queue_missing_durations(self):
-        """Background-probe playlist entries with no cached duration."""
-        for p in self.playlist:
-            if (self._duration_seconds(p) is None and os.path.exists(p)
-                    and self.is_audio_file(p) and p not in self._probe_inflight):
-                self._probe_inflight.add(p)
-                self._probe_queue.put(('meta', p, dict(self.audio_properties)))
+    def _queue_playlist_metadata(self):
+        """Probe titles even when an earlier session already cached durations."""
+        for path in self.playlist:
+            if (path not in self._playlist_titles and path not in self._probe_inflight
+                    and not self._is_stream_url(path) and self._playable(path)):
+                self._probe_inflight.add(path)
+                self._probe_queue.put(('meta', path, {'sample_rate': 0, 'bitrate': 0, 'channels': 0}))
 
     @contextmanager
     def _store_guard(self):
@@ -1238,11 +1669,7 @@ class MusicPlayer(Gtk.Window):
             self._suppress_store = False
 
     def _atomic_write(self, path, data, binary=False):
-        """Write via tmp + os.replace so a crash mid-write can't truncate the file."""
-        tmp = path + ".tmp"
-        with open(tmp, "wb" if binary else "w") as f:
-            f.write(data)
-        os.replace(tmp, path)
+        SettingsStore.write(path, data, binary)
 
     @staticmethod
     def _cache_get(cache, key):
@@ -1279,7 +1706,7 @@ class MusicPlayer(Gtk.Window):
         config can never prevent startup."""
         defaults = {
             "volume": DEFAULT_VOLUME, "balance": 0.0,
-            "eq_values": [0.5] * SPECTRUM_BANDS,
+            "eq_values": [0.5] * EQ_BANDS,
             "shuffle": False, "repeat": REPEAT_OFF,
             "last_index": 0, "last_position_ns": 0,
             "window_pos": None,
@@ -1300,6 +1727,10 @@ class MusicPlayer(Gtk.Window):
             "scrobble_enabled": False,
             "notifications": True,
             "update_check": True,
+            "theme": "green", "palette": None, "visualization": True,
+            "peaks": True, "falloff": "normal", "show_art": True,
+            "windowshade": False, "expanded_size": [WINDOW_W, WINDOW_H],
+            "panels": {},
         }
         data = {}
         try:
@@ -1312,15 +1743,31 @@ class MusicPlayer(Gtk.Window):
         except Exception as e:
             self.log_debug(f"config load failed, using defaults: {e}")
         cfg = {**defaults, **data}
+        for key, choices, default in [('theme', THEMES, 'green'),
+                                      ('palette', (None, 'green', 'classic', 'amber'), None),
+                                      ('falloff', ('slow', 'normal', 'fast'), 'normal')]:
+            if not isinstance(cfg.get(key), (str, type(None))) or cfg.get(key) not in choices:
+                cfg[key] = default
+        for key in ('visualization', 'peaks', 'show_art'):
+            cfg[key] = cfg.get(key) is not False
+        if not isinstance(cfg.get('panels'), dict):
+            cfg['panels'] = {}
+        size = cfg.get('expanded_size')
+        if not (isinstance(size, list) and len(size) == 2 and
+                all(isinstance(n, (int, float)) and math.isfinite(n) for n in size)):
+            size = [WINDOW_W, WINDOW_H]
+        self._expanded_size = [max(440, min(4000, int(size[0]))), max(220, min(4000, int(size[1])))]
+        self._windowshade = False
+        self._restore_shade = cfg.get('windowshade') is True
         self.config = cfg
         self.volume = self._cfg(cfg, "volume", float, DEFAULT_VOLUME, 0.0, 1.0)
         self.balance = self._cfg(cfg, "balance", float, 0.0, -1.0, 1.0)
         ev = cfg.get("eq_values")
-        if isinstance(ev, list) and len(ev) == SPECTRUM_BANDS:
+        if isinstance(ev, list) and len(ev) == EQ_BANDS:
             try:
                 self.eq_values = [max(0.0, min(1.0, float(x))) for x in ev]
             except Exception:
-                self.eq_values = [0.5] * SPECTRUM_BANDS
+                self.eq_values = [0.5] * EQ_BANDS
         sh = cfg.get("shuffle", SHUFFLE_OFF)
         if isinstance(sh, bool):        # migrate pre-1.x boolean (bool IS int — check first)
             sh = SHUFFLE_TRACKS if sh else SHUFFLE_OFF
@@ -1347,20 +1794,13 @@ class MusicPlayer(Gtk.Window):
         self._restore_index = self._cfg(cfg, "last_index", int, 0, 0)
         self._restore_position_ns = self._cfg(cfg, "last_position_ns", int, 0, 0)
         wp = cfg.get("window_pos")
-        if (isinstance(wp, (list, tuple)) and len(wp) == 2
-                and all(isinstance(x, (int, float)) for x in wp)):
+        if self._valid_pair(wp):
             self._win_pos = (int(wp[0]), int(wp[1]))
 
     def apply_config(self):
         """Push restored state into widgets after the UI + playlist exist."""
-        # Restore window position (undecorated window: the WM won't do it for us),
-        # clamped so a disconnected monitor can't strand it off-screen.
-        if self._win_pos is not None:
-            screen = Gdk.Screen.get_default()
-            if screen is not None:
-                x = max(0, min(self._win_pos[0], screen.get_width() - 100))
-                y = max(0, min(self._win_pos[1], screen.get_height() - 100))
-                self.move(x, y)
+        if self.panels.x11 and self._win_pos is not None:
+            self.move(*self._clamp_position(self._win_pos))
         # Set the player properties directly (the scale's value-changed signal does
         # NOT fire when the value is unchanged, so don't rely on it for syncing).
         self.player.set_property("volume", self.volume)
@@ -1382,11 +1822,15 @@ class MusicPlayer(Gtk.Window):
                     self._pending_seek_ns = self._restore_position_ns
                     self.position = self._restore_position_ns
         self.update_audio_display()
+        self._sync_eq_controls()
 
     def schedule_save_config(self):
+        self._sync_eq_controls()
+        if hasattr(self, 'playlist_store'):
+            self._prepare_next()
         if self._save_timeout_id is not None:
             return
-        self._save_timeout_id = GLib.timeout_add(SAVE_DEBOUNCE_MS, self._flush_save_config)
+        self._save_timeout_id = self.tasks.timeout_add(SAVE_DEBOUNCE_MS, self._flush_save_config)
 
     def _flush_save_config(self):
         self._save_timeout_id = None
@@ -1428,6 +1872,11 @@ class MusicPlayer(Gtk.Window):
                 "notifications": self.config.get("notifications", True) is not False,
                 "update_check": self.config.get("update_check", True) is not False,
             }
+            data.update({key: self.config[key] for key in
+                         ('theme', 'palette', 'visualization', 'peaks', 'falloff', 'show_art')})
+            data['windowshade'] = self._windowshade
+            data['expanded_size'] = self._expanded_size
+            data['panels'] = self.panels.snapshot() if hasattr(self, 'panels') else self.config['panels']
             serialized = json.dumps(data, indent=2)
             if serialized == self._last_config_json:
                 return
@@ -1438,23 +1887,18 @@ class MusicPlayer(Gtk.Window):
 
     def on_configure_event(self, widget, event):
         self._win_pos = self.get_position()
+        if hasattr(self, 'panels'):
+            self.panels.configured('main')
+        if getattr(self, '_layout_restored', False) and not self._windowshade and not getattr(self, '_layout_switching', False):
+            self._expanded_size = [event.width, event.height]
         return False
 
     def on_window_state_event(self, widget, event):
-        """Stop the spectrum analyzer while minimized: nobody can see the bars,
-        so skip the whole parse -> decay -> redraw chain."""
-        if self.spectrum is None:
-            return False
-        iconified = bool(event.new_window_state & Gdk.WindowState.ICONIFIED)
-        try:
-            self.spectrum.set_property("post-messages", not iconified)
-        except Exception as e:
-            self.log_debug(f"spectrum toggle failed: {e}")
-        if iconified:
-            self._start_decay()
+        self._iconified = bool(event.new_window_state & Gdk.WindowState.ICONIFIED)
+        self._update_analyzer_visibility()
+        if self._iconified:
             self._marquee_stop()
         else:
-            # Re-evaluate the title: restarts the marquee only if it's long
             self._set_title_text(getattr(self, '_title_full', '') or DEFAULT_SONG_TEXT)
         return False
 
@@ -1490,11 +1934,17 @@ class MusicPlayer(Gtk.Window):
         R repeat, Ctrl+O add files. Delete/Backspace propagate to the playlist."""
         # Typing in an entry (playlist search, dialogs) must never trigger
         # shortcuts — let the widget consume every key.
-        focus = self.get_focus()
+        focus = widget.get_focus() if isinstance(widget, Gtk.Window) else self.get_focus()
         if isinstance(focus, Gtk.Entry):
             return False
         key = event.keyval
         ctrl = bool(event.state & Gdk.ModifierType.CONTROL_MASK)
+        if ctrl and key in (Gdk.KEY_z, Gdk.KEY_Z):
+            self.undo_playlist()
+            return True
+        if isinstance(focus, (Gtk.Range, Gtk.TreeView)) and key in (
+                Gdk.KEY_Left, Gdk.KEY_Right, Gdk.KEY_Up, Gdk.KEY_Down):
+            return False
         if key in (Gdk.KEY_Delete, Gdk.KEY_BackSpace):
             return False  # handled by on_playlist_key_press
         if ctrl and key in (Gdk.KEY_o, Gdk.KEY_O):
@@ -1537,33 +1987,42 @@ class MusicPlayer(Gtk.Window):
         if self._destroyed:
             return
         self._destroyed = True
+        self.metadata_worker.close()
+        self._invalidate_next()
+        if self._analyzer_id is not None:
+            self.tasks.source_remove(self._analyzer_id)
+            self._analyzer_id = None
         if self._save_timeout_id is not None:
-            GLib.source_remove(self._save_timeout_id)
+            self.tasks.source_remove(self._save_timeout_id)
             self._save_timeout_id = None
         self._write_config()
         self.save_playlist()
         if self._durations_save_id is not None:
-            GLib.source_remove(self._durations_save_id)
+            self.tasks.source_remove(self._durations_save_id)
         self._save_durations()
         if self._sleep_timer_id is not None:
-            GLib.source_remove(self._sleep_timer_id)
+            self.tasks.source_remove(self._sleep_timer_id)
             self._sleep_timer_id = None
         self._marquee_stop()
         self._hide_tray()
         self._mpris_teardown()
+        self.panels.close()
         if self._drop_feedback_id is not None:
-            GLib.source_remove(self._drop_feedback_id)
+            self.tasks.source_remove(self._drop_feedback_id)
             self._drop_feedback_id = None
         for tid in self._timeout_ids:
             try:
-                GLib.source_remove(tid)
+                self.tasks.source_remove(tid)
             except Exception:
                 pass
         try:
             self.player.set_state(Gst.State.NULL)
         except Exception:
             pass
-        Gtk.main_quit()
+        self.player.get_bus().remove_signal_watch()
+        self.tasks.close()
+        if Gtk.main_level():
+            Gtk.main_quit()
 
     # ==================== System tray ====================
 
@@ -1643,6 +2102,7 @@ class MusicPlayer(Gtk.Window):
     def toggle_gapless(self, *_args):
         """Toggle gapless handoff. Note: a next-uri already prerolled before
         turning it off still plays gaplessly once — acceptable."""
+        self._invalidate_next()
         self.gapless = not self.gapless
         self.schedule_save_config()
         self.show_drop_feedback(
@@ -1853,7 +2313,7 @@ class MusicPlayer(Gtk.Window):
                         'deb_url': deb}
             except Exception as e:
                 err = str(e)
-            GLib.idle_add(self._check_updates_done, info, err, manual)
+            self.tasks.idle_add(self._check_updates_done, info, err, manual)
         threading.Thread(target=worker, daemon=True, name='update-check').start()
 
     @staticmethod
@@ -1935,7 +2395,7 @@ class MusicPlayer(Gtk.Window):
                 os.replace(dest + '.part', dest)
             except Exception as e:
                 err = str(e)
-            GLib.idle_add(self._update_downloaded, dest, err)
+            self.tasks.idle_add(self._update_downloaded, dest, err)
         threading.Thread(target=worker, daemon=True, name='update-download').start()
 
     def _update_downloaded(self, dest, err):
@@ -2039,12 +2499,10 @@ class MusicPlayer(Gtk.Window):
                 Gio.dbus_error_quark(), Gio.DBusError.FAILED, str(e))
 
     def _mpris_status(self):
-        if self.is_playing:
-            return 'Playing'
-        return 'Paused' if self.current_song else 'Stopped'
+        return self.playback_state
 
     def _mpris_trackid(self):
-        return f"{MPRIS_OBJECT_PATH}/llamaamp/track/{self.current_index}"
+        return f"{MPRIS_OBJECT_PATH}/llamaamp/track/{self.order.current or 'none'}"
 
     def _mpris_art_url(self):
         """File URL for the current track's art: embedded (cached pixbuf saved
@@ -2132,10 +2590,12 @@ class MusicPlayer(Gtk.Window):
         elif prop == "Shuffle":
             want = SHUFFLE_TRACKS if value.get_boolean() else SHUFFLE_OFF
             if want != self.shuffle:
+                self._invalidate_next()
                 self.shuffle = want
                 self.update_shuffle_button()
                 self.schedule_save_config()
         elif prop == "LoopStatus":
+            self._invalidate_next()
             loop = {'None': REPEAT_OFF, 'Playlist': REPEAT_ALL, 'Track': REPEAT_ONE}
             self.repeat_mode = loop.get(value.get_string(), REPEAT_OFF)
             self.update_repeat_button()
@@ -2235,21 +2695,25 @@ class MusicPlayer(Gtk.Window):
     def _add_paths(self, paths, feedback=None):
         """Append paths to playlist + store (missing entries marked), persist,
         and auto-load the first added track if nothing is loaded. Returns count."""
+        if paths:
+            self._remember_playlist()
         added = 0
         first_new = len(self.playlist)
         with self._store_guard():
             for p in paths:
                 self.playlist.append(p)
+                self.entry_ids.append(uuid.uuid4().hex)
                 name = self._display_name(p)
                 display = (name if self._is_stream_url(p) or os.path.exists(p)
                            else f"❌ {name} [MISSING]")
-                self.playlist_store.append([p, display, len(self.playlist), self._duration_str(p)])
+                self.playlist_store.append([p, display, len(self.playlist), self._duration_str(p), self.entry_ids[-1], ""])
                 added += 1
         if not added:
             return 0
         self.update_playlist_info()
         self.save_playlist()
-        self._queue_missing_durations()
+        self._queue_playlist_metadata()
+        self._refresh_order()
         if self.current_song is None:
             self.load_song(first_new)
         if feedback:
@@ -2303,7 +2767,11 @@ class MusicPlayer(Gtk.Window):
         """Human name for a playlist entry: hostname for streams, stem for files."""
         if self._is_stream_url(path):
             return urllib.parse.urlparse(path).hostname or path
-        return os.path.splitext(os.path.basename(path))[0]
+        title = self._playlist_titles.get(path)
+        if not title:
+            cached = self._meta_cache.get(path)
+            title = cached.get('title') if isinstance(cached, dict) else None
+        return title if title else os.path.splitext(os.path.basename(path))[0]
 
     def _playable(self, path):
         """Can this playlist entry be played right now?"""
@@ -2320,502 +2788,420 @@ class MusicPlayer(Gtk.Window):
         return ext in audio_extensions
     
     def show_drop_feedback(self, message):
-        """Show a brief feedback message when files are dropped"""
-        self._marquee_stop()  # a tick must not overwrite the transient message
-        self.song_label.set_text(f"▸ {message}")
-
-        def restore_text():
-            self._drop_feedback_id = None
-            self._refresh_song_label()  # keeps tag-derived "Artist - Title"
-            return False
-
-        # Re-arm rather than stack timers on rapid drops
+        if self._destroyed:
+            return
+        self.feedback_label.set_text(message)
+        self.feedback_label.set_tooltip_text(message)
         if self._drop_feedback_id is not None:
-            GLib.source_remove(self._drop_feedback_id)
-        self._drop_feedback_id = GLib.timeout_add(2000, restore_text)
-        
+            self.tasks.source_remove(self._drop_feedback_id)
+        def clear():
+            self._drop_feedback_id = None
+            if not self._destroyed:
+                self.feedback_label.set_text('')
+            return False
+        self._drop_feedback_id = self.tasks.timeout_add_seconds(5, clear)
+
     def setup_styling(self):
-        css_provider = Gtk.CssProvider()
+        self.theme = THEMES[self.config.get('theme', 'green')]
+        t = self.theme
         css = """
-
-        /* ============================================================
-           Llama Amp — modern flat Winamp theme
-           Tokens: chassis #101210 · panel #161917 · control #1d211e
-                   hover #262b27 · pressed #0e100e · hairline #2b302c
-                   text #d8dcd8 · accent #1ae000 · accent-bright #52ff33
-                   accent-dim #18b40a · LCD #00ff00 on #000000
-           ============================================================ */
-
-        window.llama-window {
-            background-color: transparent;
-        }
-
-        .music-player-main {
-            background: #101210;
-            border: 1px solid #2b302c;
-            border-radius: 12px;
-        }
-
-        .music-player-main.drag-over {
-            background: #0f1a0c;
-            border: 1px solid #1ae000;
-            box-shadow: inset 0 0 12px rgba(26, 224, 0, 0.18);
-        }
-
-        .music-player-titlebar {
-            background: #101210;
-            color: #1ae000;
-            font-family: "Orbitron", "DejaVu Sans", sans-serif;
-            font-size: 15px;
-            font-weight: bold;
-            letter-spacing: 2px;
-            padding: 10px 14px;
-            border-bottom: 1px solid #2b302c;
-            border-radius: 12px 12px 0 0;
-            text-shadow: 0 0 6px rgba(26, 224, 0, 0.35);
-        }
-
-        .music-player-display {
-            background: #000000;
-            color: #00ff00;
-            font-family: "Courier New", "Liberation Mono", monospace;
-            font-size: 15px;
-            font-weight: bold;
-            border: 1px solid #2b302c;
-            border-radius: 6px;
-            margin: 4px 0;
-            padding: 12px;
-        }
-
-        .music-player-art {
-            border: 1px solid #2b302c;
-            border-radius: 4px;
-        }
-
-        .music-player-time {
-            background: #000000;
-            color: #00ff00;
-            font-family: "DSEG7 Classic", "Courier New", "Liberation Mono", monospace;
-            font-size: 30px;
-            font-weight: normal;
-            border: 1px solid #2b302c;
-            border-radius: 4px;
-            padding: 10px 14px;
-            min-width: 120px;
-        }
-
-        .music-player-button {
-            background: #1d211e;
-            border: 1px solid #2b302c;
-            border-radius: 6px;
-            color: #d8dcd8;
-            font-size: 20px;
-            min-width: 44px;
-            min-height: 36px;
-            margin: 2px;
-            padding: 6px 12px;
-            transition: background 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
-        }
-
-        .music-player-button:hover {
-            background: #262b27;
-            border-color: #3c433e;
-            color: #52ff33;
-        }
-
-        .music-player-button:active,
-        .music-player-button.pressed {
-            background: #0e100e;
-            color: #1ae000;
-        }
-
-        .music-player-button.active {
-            background: rgba(26, 224, 0, 0.12);
-            border: 1px solid #1ae000;
-            color: #1ae000;
-            box-shadow: 0 0 8px rgba(26, 224, 0, 0.25);
-        }
-
-        .music-player-button.active:hover {
-            background: rgba(26, 224, 0, 0.18);
-            color: #52ff33;
-        }
-
-        .music-player-button.active:active,
-        .music-player-button.active.pressed {
-            background: rgba(26, 224, 0, 0.08);
-        }
-
-        .music-player-text-button {
-            background: #1d211e;
-            border: 1px solid #2b302c;
-            border-radius: 6px;
-            color: #d8dcd8;
-            font-size: 12px;
-            font-weight: bold;
-            letter-spacing: 1px;
-            min-height: 32px;
-            margin: 2px;
-            padding: 8px 10px;
-            transition: background 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
-        }
-
-        .music-player-text-button:hover {
-            background: #262b27;
-            border-color: #3c433e;
-            color: #52ff33;
-        }
-
-        .music-player-text-button:active,
-        .music-player-text-button.pressed {
-            background: #0e100e;
-            color: #1ae000;
-        }
-
-        .music-player-text-button.active {
-            background: rgba(26, 224, 0, 0.12);
-            border: 1px solid #1ae000;
-            color: #1ae000;
-            box-shadow: 0 0 8px rgba(26, 224, 0, 0.25);
-        }
-
-        .music-player-text-button.active:hover {
-            background: rgba(26, 224, 0, 0.18);
-            color: #52ff33;
-        }
-
-        .music-player-text-button.active:active,
-        .music-player-text-button.active.pressed {
-            background: rgba(26, 224, 0, 0.08);
-        }
-
-        .titlebar-btn {
-            font-size: 16px;
-            padding: 6px;
-        }
-
-        .eq-on-button {
-            min-height: 24px;
-            padding: 2px 10px;
-            font-size: 11px;
-        }
-
-        .titlebar-close:hover {
-            color: #ff5544;
-            border-color: #ff5544;
-        }
-
-        .music-player-slider {
-            background: transparent;
-        }
-
-        .music-player-slider trough {
-            background: #0b0d0b;
-            border: 1px solid #2b302c;
-            border-radius: 3px;
-            min-height: 6px;
-        }
-
-        .music-player-slider highlight {
-            background: #1ae000;
-            border: none;
-            border-radius: 3px;
-        }
-
-        .music-player-slider slider {
-            background: #cfd4cf;
-            border: none;
-            border-radius: 2px;
-            min-width: 6px;
-            min-height: 16px;
-        }
-
-        .music-player-slider slider:hover {
-            background: #52ff33;
-        }
-
-        .music-player-slider value {
-            color: #18b40a;
-            font-size: 11px;
-            font-weight: bold;
-        }
-
-        .volume-slider {
-            background: transparent;
-        }
-
-        .volume-slider trough {
-            background: #0b0d0b;
-            border: 1px solid #2b302c;
-            border-radius: 3px;
-            min-height: 6px;
-        }
-
-        .volume-slider highlight {
-            background: #1ae000;
-            border: none;
-            border-radius: 3px;
-        }
-
-        .volume-slider slider {
-            background: #cfd4cf;
-            border: none;
-            border-radius: 2px;
-            min-width: 6px;
-            min-height: 16px;
-        }
-
-        .volume-slider slider:hover {
-            background: #52ff33;
-        }
-
-        .volume-slider value {
-            color: #18b40a;
-            font-size: 11px;
-            font-weight: bold;
-        }
-
-        .balance-slider highlight {
-            background: transparent;
-            border: none;
-        }
-
-        /* Focus rings: Yaru paints these orange; keep them in the family */
-        *:focus {
-            outline-color: rgba(26, 224, 0, 0.45);
-        }
-
-        .eq-bar {
-            min-width: 30px;
-        }
-
-        .playlist {
-            background: #000000;
-            color: #00ff00;
-            font-family: "Courier New", "Liberation Mono", monospace;
-            font-size: 14px;
-            font-weight: bold;
-        }
-
-        .playlist-search {
-            background: #0b0d0b;
-            color: #52ff33;
-            border: 1px solid #2b302c;
-            border-radius: 4px;
-            font-size: 13px;
-            padding: 4px 8px;
-        }
-
-        .playlist-search.search-miss {
-            border-color: #ff5544;
-            color: #ff5544;
-        }
-
-        .playlist:selected {
-            background: #0d3a06;
-            color: #eaffea;
-        }
-
-        .status-indicator {
-            background: #000000;
-            color: #00d400;
-            font-family: "Courier New", "Liberation Mono", monospace;
-            font-size: 10px;
-            font-weight: bold;
-            padding: 2px 6px;
-            border: 1px solid #2b302c;
-            border-radius: 3px;
-        }
-
-        .music-player-frame {
-            background: #161917;
-            border: 1px solid #2b302c;
-            border-radius: 8px;
-            margin: 8px 12px;
-            padding: 12px;
-        }
-
-        .music-player-label {
-            font-size: 11px;
-            font-weight: bold;
-            letter-spacing: 2px;
-            color: #18b40a;
-        }
-
-        scrollbar {
-            background: transparent;
-        }
-
-        scrollbar trough {
-            background: #0b0d0b;
-        }
-
-        scrollbar slider {
-            background: #343a35;
-            border-radius: 4px;
-            min-width: 6px;
-        }
-
-        scrollbar slider:hover {
-            background: #18b40a;
-        }
-
-        menu {
-            background-color: #141614;
-            border: 1px solid #2b302c;
-        }
-
-        menuitem {
-            padding: 8px 14px;
-            color: #d8dcd8;
-            font-size: 15px;
-        }
-
-        menuitem:hover {
-            background-color: rgba(26, 224, 0, 0.12);
-            color: #52ff33;
-        }
-
-        menuitem:disabled {
-            color: #6a716a;
-        }
-
-        menu separator {
-            background-color: #2b302c;
-            min-height: 1px;
-        }
-
-        tooltip {
-            background-color: #101210;
-            color: #d8dcd8;
-            border: 1px solid #2b302c;
-        }
+        window.llama-window { background-color: transparent; }
+        .music-player-main { background: CHASSIS; color: TEXT; border: 1px solid CONTROL;
+                             border-radius: 5px; font: 12px "DejaVu Sans"; }
+        .music-player-titlebar { background: linear-gradient(to bottom, CONTROL, PANEL);
+            color: TEXT; padding: 3px 5px; border-bottom: 1px solid #080a08; }
+        .brand { font: bold 11px "Orbitron", sans-serif; letter-spacing: 1px; color: ACCENT; }
+        .music-player-frame { background: PANEL; border: 1px solid CONTROL;
+            border-radius: 3px; margin: 2px 5px; padding: 5px; }
+        frame.music-player-frame > border, frame.music-player-display > border { border: none; }
+        .version-badge { font: 10px "Liberation Mono", monospace; color: TEXT;
+            background: LCD; border: 1px solid CONTROL; border-top-color: #080b08;
+            border-radius: 3px; padding: 2px 5px; opacity: .8; }
+        .song-title { font-size: 14px; font-weight: bold; }
+        .music-player-display { background: LCD; color: ACCENT; padding: 7px;
+            border: 1px solid #050705; border-bottom-color: CONTROL;
+            border-radius: 2px; font: bold 12px "Liberation Mono"; }
+        .music-player-time { font: 30px "DSEG7 Classic", monospace; color: ACCENT;
+            background: LCD; padding: 4px; }
+        .music-player-label { font: 10px "DejaVu Sans"; color: TEXT; }
+        .music-player-art { border: 1px solid CONTROL; }
+        .music-player-main button { background: linear-gradient(to bottom, CONTROL, PANEL);
+            color: TEXT; border: 1px solid CONTROL; border-top-color: #667067;
+            border-bottom-color: #090c09; border-radius: 2px; padding: 4px 7px;
+            min-width: 16px; min-height: 18px; font: bold 10px "DejaVu Sans"; }
+        .music-player-main .panel-control { min-width: 24px; min-height: 24px; padding: 1px; }
+        .music-player-main button:hover { border-color: ACCENT; }
+        .music-player-main button:active, .music-player-main button.active,
+        .music-player-main button:checked { background: LCD; color: ACCENT;
+            border-top-color: #030503; border-bottom-color: CONTROL; }
+        .music-player-main button:disabled { opacity: .45; }
+        .music-player-main :focus { outline: 1px solid ACCENT; outline-offset: -2px; }
+        .music-player-main scale { padding: 3px; color: TEXT; font-size: 10px; }
+        .music-player-main scale trough { background: LCD; min-height: 4px; min-width: 4px;
+            border: 1px solid #080b08; border-bottom-color: CONTROL; }
+        .music-player-main scale highlight { background: ACCENT; border: none; box-shadow: none; }
+        .music-player-main scale.vertical highlight { background: transparent; }
+        .music-player-main scale slider { background: linear-gradient(to bottom, #c7ccc6, #778176);
+            border: 1px solid #242c24; border-top-color: #edf3e9;
+            box-shadow: none; border-radius: 1px; min-width: 9px; min-height: 12px; margin: -4px 0; }
+        .music-player-main scale.vertical slider { min-width: 19px; min-height: 7px; margin: 0 -8px; }
+        .music-player-main scale.eq-bypassed trough { background: alpha(LCD, .6);
+            border-color: alpha(#080b08, .6); border-bottom-color: alpha(CONTROL, .6); }
+        .music-player-main scale.eq-bypassed slider {
+            background: linear-gradient(to bottom, alpha(#c7ccc6, .45), alpha(#778176, .45));
+            border-color: alpha(#242c24, .45); border-top-color: alpha(#edf3e9, .45); }
+        .music-player-main scale mark { color: TEXT; font-size: 8px; }
+        .playlist { background: LCD; color: ACCENT; font: 12px "Liberation Mono";
+                    -GtkTreeView-vertical-separator: 0; }
+        .playlist:selected { background: CONTROL; color: TEXT; }
+        .playlist-search { background: LCD; color: TEXT; border: 1px solid CONTROL;
+                           border-radius: 2px; padding: 3px; min-height: 20px; font-size: 11px; }
+        .search-miss { border-color: #e78d55; }
+        .muted { color: TEXT; font-size: 10px; opacity: .8; }
+        .panel-header { padding: 2px; }
+        .music-player-main.drag-over { border-color: ACCENT; }
         """
-        
-        css_provider.load_from_data(css.encode())
-        screen = Gdk.Screen.get_default()
-        style_context = Gtk.StyleContext()
-        style_context.add_provider_for_screen(screen, css_provider, 
-                                              Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-    
+        for token in ('CHASSIS', 'PANEL', 'CONTROL', 'TEXT', 'ACCENT', 'LCD'):
+            css = css.replace(token, t[token.lower()])
+        if t is THEMES['silver']:
+            css += '.music-player-main button { color: #10151b; background: linear-gradient(to bottom, #d3d7df, #929aaa); }'
+            css += '.music-player-main button:active, .music-player-main button.active { color: #8cfa65; background: #131a15; }'
+            css += '.playlist:selected { color: #10151b; }'
+        if hasattr(self, '_css_provider'):
+            Gtk.StyleContext.remove_provider_for_screen(Gdk.Screen.get_default(), self._css_provider)
+        self._css_provider = Gtk.CssProvider()
+        self._css_provider.load_from_data(css.encode())
+        Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), self._css_provider,
+                                                 Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        if hasattr(self, 'analyzer'):
+            self.analyzer.queue_draw()
+            self.playlist_view.queue_draw()
+
+    @staticmethod
+    def _minimum_geometry(height):
+        geometry = Gdk.Geometry()
+        geometry.min_width = 440
+        geometry.min_height = height
+        return geometry
+
+    @staticmethod
+    def _valid_pair(value):
+        return (isinstance(value, (list, tuple)) and len(value) == 2 and
+                all(isinstance(n, (int, float)) and math.isfinite(n) for n in value))
+
+    def _workarea(self):
+        display = Gdk.Display.get_default()
+        monitor = display.get_monitor_at_window(self.get_window()) if self.get_window() else display.get_primary_monitor()
+        if monitor is None:
+            monitor = display.get_monitor(0)
+        return monitor.get_workarea()
+
+    def _clamp_size(self, size, minimum_height=220):
+        if not self._valid_pair(size):
+            size = [WINDOW_W, WINDOW_H]
+        area = self._workarea()
+        return (max(440, min(int(size[0]), area.width)),
+                max(minimum_height, min(int(size[1]), area.height)))
+
+    def _clamp_position(self, position):
+        x, y = map(int, position)
+        display = Gdk.Display.get_default()
+        monitor = display.get_monitor_at_point(x, y) or display.get_monitor(0)
+        area = monitor.get_workarea()
+        return max(area.x, min(x, area.x + area.width - 100)), max(area.y, min(y, area.y + area.height - 60))
+
+    def _window_mapped(self, *_args):
+        if not getattr(self, '_layout_restored', False):
+            self._layout_restored = True
+            self.resize(*self._clamp_size(self._expanded_size))
+            self.panels.restore()
+            if self._restore_shade:
+                self.tasks.idle_add(self.toggle_windowshade)
+        self._update_analyzer_visibility()
+        return False
+
+    def toggle_windowshade(self, *_args):
+        if self._destroyed:
+            return False
+        self._layout_switching = True
+        if not self._windowshade:
+            self._expanded_size = list(self.get_size())
+        self._windowshade = not self._windowshade
+        self.resize_grip.set_visible(not self._windowshade)
+        self.player_frame.set_visible(not self._windowshade)
+        self.brand_group.set_visible(not self._windowshade)
+        self._title_spacer.set_visible(not self._windowshade)
+        for widget in (self.shade_title, self.shade_time, self.shade_controls):
+            if self._windowshade:
+                widget.show()
+                if widget is self.shade_controls:
+                    for child in widget.get_children():
+                        child.show_all()
+            else:
+                widget.hide()
+        for name in self.panels.items:
+            self.panels._show(name)
+        self.set_geometry_hints(None, self._minimum_geometry(48 if self._windowshade else 220),
+                                Gdk.WindowHints.MIN_SIZE)
+        self.resize(self._expanded_size[0], 48 if self._windowshade else self._expanded_size[1])
+        self._update_analyzer_visibility()
+        self._marquee_stop()
+        if not self._windowshade:
+            self._set_title_text(getattr(self, '_title_full', '') or DEFAULT_SONG_TEXT)
+        def settled():
+            self._layout_switching = False
+            return False
+        self.tasks.idle_add(settled)
+        self.schedule_save_config()
+        return False
+
+    def _add_resize_grip(self, window, content):
+        """Overlay a visible hit target without adding a footer to the layout."""
+        overlay = Gtk.Overlay()
+        overlay.add(content)
+        window.add(overlay)
+        grip = Gtk.DrawingArea()
+        grip.set_size_request(24, 24)
+        grip.set_halign(Gtk.Align.END)
+        grip.set_valign(Gtk.Align.END)
+        grip.set_margin_end(2)
+        grip.set_margin_bottom(2)
+        grip.set_tooltip_text('Drag to resize')
+        grip.get_accessible().set_name('Resize window')
+        grip.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.ENTER_NOTIFY_MASK
+                        | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+        grip.connect('draw', self._draw_resize_grip)
+        grip.connect('button-press-event',
+                     lambda _widget, event: self._resize_press(window, event, from_grip=True))
+        def realize(widget):
+            cursor = Gdk.Cursor.new_from_name(widget.get_display(), 'se-resize')
+            if cursor is None:
+                cursor = Gdk.Cursor.new_for_display(widget.get_display(), Gdk.CursorType.BOTTOM_RIGHT_CORNER)
+            widget.get_window().set_cursor(cursor)
+        def hover(widget, event, entering):
+            if entering:
+                widget.set_state_flags(Gtk.StateFlags.PRELIGHT, False)
+            else:
+                widget.unset_state_flags(Gtk.StateFlags.PRELIGHT)
+            widget.queue_draw()
+            return False
+        grip.connect('realize', realize)
+        grip.connect('enter-notify-event', hover, True)
+        grip.connect('leave-notify-event', hover, False)
+        overlay.add_overlay(grip)
+        overlay.set_overlay_pass_through(grip, False)
+        window.resize_grip = grip
+        grip.show()
+        grip.set_no_show_all(True)
+        overlay.show()
+
+    def _draw_resize_grip(self, widget, cr):
+        hovered = bool(widget.get_state_flags() & Gtk.StateFlags.PRELIGHT)
+        x, y = widget.get_allocated_width() - 4.5, widget.get_allocated_height() - 4.5
+        # Paired dark/light diagonals give the grip the same bevel as the buttons.
+        for offset, color, alpha in ((1, self.theme['lcd'], 1),
+                                     (0, self.theme['accent'] if hovered else self.theme['text'],
+                                      1 if hovered else .65)):
+            self._cairo_color(cr, color, alpha)
+            cr.set_line_width(1)
+            for length in (4, 8, 12):
+                cr.move_to(x - length, y + offset)
+                cr.line_to(x, y - length + offset)
+            cr.stroke()
+        return False
+
+    def _resize_press(self, window, event, from_grip=False):
+        if event.button != 1 or (window is self and self._windowshade):
+            return False
+        if from_grip or (event.x >= window.get_allocated_width() - 12
+                         and event.y >= window.get_allocated_height() - 12):
+            window.begin_resize_drag(Gdk.WindowEdge.SOUTH_EAST, event.button,
+                                     int(event.x_root), int(event.y_root), event.time)
+            return True
+        return False
+
+    def _reset_layout(self, *_args):
+        if self._windowshade:
+            self.toggle_windowshade()
+        self.panels.reset()
+        self._expanded_size = [WINDOW_W, WINDOW_H]
+        self.resize(*self._clamp_size(self._expanded_size))
+        if self.panels.x11:
+            area = self._workarea()
+            self.move(area.x + max(0, (area.width - WINDOW_W) // 2), area.y + 30)
+        self.schedule_save_config()
+
+    def _set_appearance(self, key, value):
+        self.config[key] = value
+        if key == 'theme':
+            self.config['palette'] = None
+            self.setup_styling()
+        if key == 'show_art':
+            self._update_album_art(self.current_song)
+        self.analyzer.queue_draw()
+        self._update_analyzer_visibility()
+        self.schedule_save_config()
+
+    def _choice_menu(self, parent, label, key, choices):
+        item, submenu = Gtk.MenuItem(label=label), Gtk.Menu()
+        for value, caption in choices:
+            choice = Gtk.CheckMenuItem(label=caption)
+            choice.set_draw_as_radio(True)
+            choice.set_active(self.config.get(key) == value)
+            choice.connect('activate', lambda _w, k=key, v=value: self._set_appearance(k, v))
+            submenu.append(choice)
+        item.set_submenu(submenu)
+        parent.append(item)
+
+    def _appearance_menus(self, menu):
+        self._choice_menu(menu, 'Theme', 'theme', [(key, value['name']) for key, value in THEMES.items()])
+        visualization, sub = Gtk.MenuItem(label='Visualization'), Gtk.Menu()
+        for key, caption in [('visualization', 'Spectrum enabled'), ('peaks', 'Falling peak caps')]:
+            item = Gtk.CheckMenuItem(label=caption)
+            item.set_active(self.config[key])
+            item.connect('toggled', lambda w, k=key: self._set_appearance(k, w.get_active()))
+            sub.append(item)
+        self._choice_menu(sub, 'Colors', 'palette', [(None, 'Follow theme'), ('green', 'Green'),
+                                                     ('classic', 'Green / yellow / red'), ('amber', 'Amber')])
+        self._choice_menu(sub, 'Falloff', 'falloff', [('slow', 'Slow'), ('normal', 'Normal'), ('fast', 'Fast')])
+        visualization.set_submenu(sub)
+        menu.append(visualization)
+        view, sub = Gtk.MenuItem(label='View'), Gtk.Menu()
+        shade = Gtk.CheckMenuItem(label='Windowshade')
+        shade.set_active(self._windowshade)
+        shade.connect('activate', self.toggle_windowshade)
+        sub.append(shade)
+        art = Gtk.CheckMenuItem(label='Album artwork')
+        art.set_active(self.config['show_art'])
+        art.connect('toggled', lambda w: self._set_appearance('show_art', w.get_active()))
+        sub.append(art)
+        for name, panel in self.panels.items.items():
+            item = Gtk.CheckMenuItem(label=panel['title'].title())
+            item.set_active(panel['visible'])
+            item.connect('toggled', lambda w, n=name: self.panels.set_visible(n, w.get_active()))
+            sub.append(item)
+        reset = Gtk.MenuItem(label='Reset layout')
+        reset.connect('activate', self._reset_layout)
+        sub.append(reset)
+        view.set_submenu(sub)
+        menu.append(view)
+
+    def _popup_actions(self, button, actions):
+        menu = Gtk.Menu()
+        for caption, callback in actions:
+            item = Gtk.MenuItem(label=caption)
+            item.connect('activate', callback)
+            menu.append(item)
+        menu.show_all()
+        self._actions_menu = menu
+        menu.popup_at_widget(button, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, None)
+        return menu
+
+    def _add_popup(self, button):
+        self._popup_actions(button, [('Files… (Ctrl+O)', self.add_files),
+                                     ('Folder…', self.add_folder), ('Stream URL… (Ctrl+L)', self.open_url_dialog)])
+
+    def _playlist_popup(self, button):
+        actions = [('Undo edit (Ctrl+Z)', self.undo_playlist),
+                   ('Save playlist as…', self._save_playlist_as), ('Save playlist', self._save_playlist_named)]
+        for name in self._saved_playlist_names():
+            actions.append((f'Load: {name}', lambda _w, n=name: self._load_named_playlist(n)))
+        actions.extend([('Export M3U…', self.export_m3u), ('Remove missing files', self.remove_missing),
+                        ('Clear playlist', self.clear_playlist)])
+        menu = self._popup_actions(button, actions)
+        menu.get_children()[0].set_sensitive(bool(self._undo))
+
     def create_interface(self):
-        main_box = Gtk.VBox(spacing=0)
-        main_box.get_style_context().add_class('music-player-main')
-        self.add(main_box)
-        
-        # Custom title bar
-        title_bar = self.create_title_bar()
-        main_box.pack_start(title_bar, False, False, 0)
-        
-        # Main player area
-        player_frame = Gtk.Frame()
-        player_frame.get_style_context().add_class('music-player-frame')
-        
-        player_box = Gtk.VBox(spacing=25)
-        
-        # LED Display
-        display_area = self.create_display_area()
-        player_box.pack_start(display_area, False, False, 0)
-        
-        # Control buttons row (position slider lives inside the display panel)
-        controls = self.create_controls()
-        player_box.pack_start(controls, False, False, 0)
+        self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.main_box.get_style_context().add_class('music-player-main')
+        self._add_resize_grip(self, self.main_box)
+        self.main_box.pack_start(self.create_title_bar(), False, False, 0)
+        self.player_frame = Gtk.Frame()
+        self.player_frame.get_style_context().add_class('music-player-frame')
+        player_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        player_box.pack_start(self.create_display_area(), False, False, 0)
+        player_box.pack_start(self.create_controls(), False, False, 0)
+        player_box.pack_start(self.create_volume_controls(), False, False, 0)
+        self.player_frame.add(player_box)
+        self.main_box.pack_start(self.player_frame, False, False, 0)
+        self.panels = PanelManager(self, self.main_box)
+        self.panels.add('eq', 'EQUALIZER', self.create_equalizer())
+        self.panels.add('playlist', 'PLAYLIST', self.create_playlist(), expand=True)
+        self.set_geometry_hints(None, self._minimum_geometry(220),
+                                Gdk.WindowHints.MIN_SIZE)
+        self.time_display.connect('notify::label', lambda *_: self.shade_time.set_text(self.time_display.get_text()))
+        self.connect('map-event', self._window_mapped)
+        self.connect('unmap-event', lambda *_: self._update_analyzer_visibility())
+        self.connect('button-press-event', self._resize_press)
 
-        # Volume and balance
-        vol_controls = self.create_volume_controls()
-        player_box.pack_start(vol_controls, False, False, 0)
-        
-        player_frame.add(player_box)
-        main_box.pack_start(player_frame, False, False, 0)
-        
-        # Equalizer
-        eq_frame = self.create_equalizer()
-        main_box.pack_start(eq_frame, False, False, 0)
-        
-        # Playlist
-        playlist_frame = self.create_playlist()
-        main_box.pack_start(playlist_frame, True, True, 0)
-        
     def create_title_bar(self):
-        title_event_box = Gtk.EventBox()
-        title_event_box.get_style_context().add_class('music-player-titlebar')
-        
-        title_box = Gtk.HBox()
-        
-        # Music Player title
-        title_label = Gtk.Label(label=f" {APP_NAME} v{APP_VERSION} ")
-        title_label.set_halign(Gtk.Align.START)
-        title_label.set_margin_start(20)
-        title_box.pack_start(title_label, True, True, 0)
-        
-        # Window controls
-        controls_box = Gtk.HBox(spacing=2)
+        events = Gtk.EventBox()
+        events.get_style_context().add_class('music-player-titlebar')
+        box = Gtk.Box(spacing=3)
+        self.brand_group = Gtk.Box(spacing=8)
+        self.brand_group.set_margin_start(19)  # 20 px including the chassis border
+        self.brand_label = Gtk.Label(label='LLAMA AMP')
+        self.brand_label.get_style_context().add_class('brand')
+        self.brand_group.pack_start(self.brand_label, False, False, 0)
+        self.version_badge = Gtk.Label(label=f'v{APP_VERSION}')
+        self.version_badge.get_style_context().add_class('version-badge')
+        self.version_badge.set_valign(Gtk.Align.CENTER)
+        self.version_badge.get_accessible().set_name(f'Version {APP_VERSION}')
+        self.brand_group.pack_start(self.version_badge, False, False, 0)
+        box.pack_start(self.brand_group, False, False, 0)
+        self.shade_title = Gtk.Label()
+        self.shade_title.set_ellipsize(Pango.EllipsizeMode.END)
+        self.shade_title.set_width_chars(8)
+        self.shade_title.set_max_width_chars(35)
+        self.shade_title.set_no_show_all(True)
+        box.pack_start(self.shade_title, True, True, 3)
+        self.shade_time = Gtk.Label(label='00:00')
+        self.shade_time.set_no_show_all(True)
+        box.pack_start(self.shade_time, False, False, 2)
+        self.shade_controls = Gtk.Box(spacing=1)
+        self.shade_controls.set_no_show_all(True)
+        for icon, tip, callback in [('previous', 'Previous', self.previous_song),
+                                     ('play', 'Play / Pause (Space)', self.toggle_play_pause),
+                                     ('next', 'Next', self.next_song)]:
+            button = self._transport_button(icon, tip, callback)
+            self.shade_controls.pack_start(button, False, False, 0)
+        box.pack_start(self.shade_controls, False, False, 0)
+        spacer = Gtk.Label()
+        box.pack_start(spacer, True, True, 0)
+        self._title_spacer = spacer
+        for label, tip, callback in [('⚙', 'Settings', self.on_settings_clicked),
+                                     ('▱', 'Windowshade / restore (double-click title bar)', self.toggle_windowshade),
+                                     ('−', 'Minimize', lambda *_: self.iconify()),
+                                     ('×', 'Close', self.on_close_clicked)]:
+            button = Gtk.Button(label=label)
+            button.set_tooltip_text(tip)
+            button.get_accessible().set_name(tip)
+            button.connect('clicked', callback)
+            box.pack_start(button, False, False, 0)
+        events.add(box)
+        events.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        events.connect('button-press-event', self.on_title_press)
+        return events
 
-        settings_btn = Gtk.Button(label="⚙")
-        settings_btn.set_size_request(48, 40)
-        settings_btn.get_style_context().add_class('music-player-text-button')
-        settings_btn.get_style_context().add_class('titlebar-btn')
-        settings_btn.set_tooltip_text("Settings")
-        settings_btn.connect("clicked", self.on_settings_clicked)
-
-        min_btn = Gtk.Button(label="─")
-        min_btn.set_size_request(48, 40)
-        min_btn.get_style_context().add_class('music-player-text-button')
-        min_btn.get_style_context().add_class('titlebar-btn')
-        min_btn.set_tooltip_text("Minimize")
-        min_btn.connect("clicked", lambda x: self.iconify())
-        # No press-swallowing handler: GtkButton consumes the press itself, so
-        # titlebar drag can't interfere — and a True-returning handler would
-        # block the button's own activation (the old minimize bug).
-        
-        close_btn = Gtk.Button(label="✕")
-        close_btn.set_size_request(48, 40)
-        close_btn.get_style_context().add_class('music-player-text-button')
-        close_btn.get_style_context().add_class('titlebar-btn')
-        close_btn.get_style_context().add_class('titlebar-close')
-        close_btn.set_tooltip_text("Close")
-        close_btn.connect("clicked", self.on_close_clicked)
-        # Prevent title bar drag events from interfering with close button
-        close_btn.connect("button-press-event", self.on_button_press)
-        close_btn.connect("button-release-event", self.on_button_release)
-        
-        controls_box.pack_start(settings_btn, False, False, 0)
-        controls_box.pack_start(min_btn, False, False, 0)
-        controls_box.pack_start(close_btn, False, False, 0)
-        
-        title_box.pack_end(controls_box, False, False, 0)
-        title_event_box.add(title_box)
-        
-        # Make title bar draggable and add context menu
-        title_event_box.connect("button-press-event", self.on_title_press)
-        title_event_box.connect("button-release-event", self.on_title_release)
-        title_event_box.connect("motion-notify-event", self.on_title_motion)
-        
-        return title_event_box
-        
     def on_title_press(self, widget, event):
-        if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 1:  # Left click
-            self.drag_start_x = event.x_root - self.get_position()[0]
-            self.drag_start_y = event.y_root - self.get_position()[1]
-            self.is_dragging = True
-        elif event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:  # Right click
+        if event.button == 3:
             self.show_title_context_menu(widget, event)
-    
-    def on_title_motion(self, widget, event):
-        if self.is_dragging:
-            self.move(int(event.x_root - self.drag_start_x),
-                     int(event.y_root - self.drag_start_y))
-    
-    def on_title_release(self, widget, event):
-        """Handle title bar button release to stop dragging"""
-        if event.type == Gdk.EventType.BUTTON_RELEASE and event.button == 1:  # Left click release
-            self.is_dragging = False
-    
+            return True
+        if event.button != 1:
+            return False
+        if event.type == Gdk.EventType.DOUBLE_BUTTON_PRESS:
+            self.toggle_windowshade()
+        else:
+            self.panels.start_drag(self, event) if hasattr(self, 'panels') else None
+            self.begin_move_drag(event.button, int(event.x_root), int(event.y_root), event.time)
+        return True
+
     def build_settings_menu(self):
         """The settings menu: audio fidelity toggles, EQ presets, window actions.
         Served by both the titlebar ⚙ button and the titlebar right-click."""
         menu = Gtk.Menu()
-
+        self._appearance_menus(menu)
+        menu.append(Gtk.SeparatorMenuItem())
         header = Gtk.MenuItem(label="Audio Output")
         header.set_sensitive(False)
         menu.append(header)
@@ -3027,166 +3413,142 @@ class MusicPlayer(Gtk.Window):
         return True
 
     def create_display_area(self):
-        display_frame = Gtk.Frame()
-        display_frame.get_style_context().add_class('music-player-display')
-        display_events = Gtk.EventBox()
-        display_events.set_visible_window(False)  # draw-through: keep the frame's styling
-        display_events.add_events(Gdk.EventMask.SCROLL_MASK
-                                  | Gdk.EventMask.SMOOTH_SCROLL_MASK)
-        display_events.connect("scroll-event", self.on_display_scroll)
-        
-        # Art on the left spans the full panel height; info + time stack on the right
-        outer_box = Gtk.HBox(spacing=12)
-        outer_box.set_margin_top(10)
-        outer_box.set_margin_bottom(10)
-        outer_box.set_margin_start(10)
-        outer_box.set_margin_end(10)
-
-        # Album art (hidden until a track provides art)
-        self.album_art = Gtk.Image()
-        self.album_art.get_style_context().add_class('music-player-art')
-        self.album_art.set_valign(Gtk.Align.CENTER)
-        self.album_art.set_no_show_all(True)
-        outer_box.pack_start(self.album_art, False, False, 0)
-
-        display_box = Gtk.VBox(spacing=15)
-
-        # Main info display
-        info_box = Gtk.HBox(spacing=10)
-
-        # Song info
-        song_box = Gtk.VBox(spacing=8)
-        self.song_label = Gtk.Label(label=DEFAULT_SONG_TEXT)
-        self.song_label.set_halign(Gtk.Align.START)
+        frame = Gtk.Frame()
+        frame.get_style_context().add_class('music-player-display')
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.song_label = Gtk.Label(label=DEFAULT_SONG_TEXT, xalign=0)
+        self.song_label.get_style_context().add_class('song-title')
         self.song_label.set_ellipsize(Pango.EllipsizeMode.END)
-        self.song_label.set_max_width_chars(44)  # panel is ~440px of text room beside the art
-        song_box.pack_start(self.song_label, False, False, 0)
-        
-        # Bitrate, frequency info
-        self.info_label = Gtk.Label(label="")
-        self.info_label.set_halign(Gtk.Align.START)
-        song_box.pack_start(self.info_label, False, False, 0)
-        
-        info_box.pack_start(song_box, True, True, 0)
-        display_box.pack_start(info_box, False, False, 0)
-        
-        # Time display
-        time_box = Gtk.HBox(spacing=15)
-
-        self.time_display = Gtk.Label(label="00:00")
+        self.song_label.set_width_chars(20)
+        self.song_label.set_max_width_chars(44)
+        box.pack_start(self.song_label, False, False, 0)
+        middle = Gtk.Box(spacing=8)
+        self.album_art = Gtk.Image()
+        self.album_art.set_no_show_all(True)
+        self.album_art.get_style_context().add_class('music-player-art')
+        middle.pack_start(self.album_art, False, False, 0)
+        self.time_display = Gtk.Label(label='00:00')
         self.time_display.get_style_context().add_class('music-player-time')
-        # Winamp-style: clicking the clock flips elapsed <-> remaining
         time_events = Gtk.EventBox()
         time_events.set_visible_window(False)
         time_events.add(self.time_display)
-        time_events.set_tooltip_text("Click: elapsed / remaining")
-        time_events.connect("button-press-event", self._toggle_time_mode)
-        time_box.pack_start(time_events, False, False, 0)
+        time_events.set_tooltip_text('Click: elapsed / remaining')
+        time_events.connect('button-press-event', self._clock_press)
+        middle.pack_start(time_events, False, False, 0)
+        self.analyzer = Gtk.DrawingArea()
+        self.analyzer.set_size_request(100, 62)
+        self.analyzer.set_hexpand(True)
+        self.analyzer.get_accessible().set_name('Audio spectrum with falling peak indicators')
+        self.analyzer.connect('draw', self._draw_analyzer)
+        self.analyzer.connect('map', lambda *_: self._update_analyzer_visibility())
+        self.analyzer.connect('unmap', lambda *_: self._update_analyzer_visibility())
+        middle.pack_start(self.analyzer, True, True, 0)
+        box.pack_start(middle, False, False, 0)
+        self.info_label = Gtk.Label(xalign=0)
+        self.info_label.set_ellipsize(Pango.EllipsizeMode.END)
+        self.info_label.get_style_context().add_class('muted')
+        box.pack_start(self.info_label, False, False, 0)
+        box.pack_start(self.create_position_slider(), False, False, 0)
+        frame.add(box)
+        return frame
 
-
-        display_box.pack_start(time_box, False, False, 0)
-
-        outer_box.pack_start(display_box, True, True, 0)
-
-        # Stack the art/info row above the position slider inside the LCD panel
-        panel_box = Gtk.VBox(spacing=10)
-        panel_box.pack_start(outer_box, True, True, 0)
-        panel_box.pack_start(self.create_position_slider(), False, False, 0)
-
-        display_frame.add(panel_box)
-        display_events.add(display_frame)
-        return display_events
-    
     def create_controls(self):
-        # Create a container with internal padding
-        controls_container = Gtk.VBox()
-        controls_container.set_margin_top(8)
-        controls_container.set_margin_bottom(8)
-        controls_container.set_margin_start(8)
-        controls_container.set_margin_end(8)
-        
-        controls_box = Gtk.HBox(spacing=15, homogeneous=False)
-        
-        # Transport controls with exact music player button layout
-        self.prev_btn = Gtk.Button(label="❙◂◂")
-        # Scale the track-stop pipe down to the small triangles' optical height
-        self.prev_btn.get_child().set_markup(f'{PIPE_MARKUP}◂◂')
-        self.prev_btn.get_style_context().add_class('music-player-button')
-        self.prev_btn.set_tooltip_text("Previous Track")
-        self.prev_btn.set_halign(Gtk.Align.CENTER)
-        self.prev_btn.set_valign(Gtk.Align.CENTER)
-        self.prev_btn.connect("clicked", self.previous_song)
-        self.prev_btn.connect("button-press-event", self.on_button_press)
-        self.prev_btn.connect("button-release-event", self.on_button_release)
-        
-        self.play_btn = Gtk.Button(label="▸")
-        self.play_btn.get_style_context().add_class('music-player-button')
-        self.play_btn.set_tooltip_text("Play")
-        self.play_btn.set_halign(Gtk.Align.CENTER)
-        self.play_btn.set_valign(Gtk.Align.CENTER)
-        self.play_btn.connect("clicked", self.toggle_play_pause)
-        self.play_btn.connect("button-press-event", self.on_button_press)
-        self.play_btn.connect("button-release-event", self.on_button_release)
-        
-        self.stop_btn = Gtk.Button(label="■")
-        self.stop_btn.get_style_context().add_class('music-player-button')
-        self.stop_btn.set_tooltip_text("Stop  ·  right-click: stop after current track")
-        self.stop_btn.connect("button-press-event", self.on_stop_button_press)
-        self.stop_btn.set_halign(Gtk.Align.CENTER)
-        self.stop_btn.set_valign(Gtk.Align.CENTER)
-        self.stop_btn.connect("clicked", self.stop_song)
-        self.stop_btn.connect("button-press-event", self.on_button_press)
-        self.stop_btn.connect("button-release-event", self.on_button_release)
-        
-        self.next_btn = Gtk.Button(label="▸▸❙")
-        self.next_btn.get_child().set_markup(f'▸▸{PIPE_MARKUP}')
-        self.next_btn.get_style_context().add_class('music-player-button')
-        self.next_btn.set_tooltip_text("Next Track")
-        self.next_btn.set_halign(Gtk.Align.CENTER)
-        self.next_btn.set_valign(Gtk.Align.CENTER)
-        self.next_btn.connect("clicked", self.next_song)
-        self.next_btn.connect("button-press-event", self.on_button_press)
-        self.next_btn.connect("button-release-event", self.on_button_release)
-        
-        # File operations
-        self.eject_btn = Gtk.Button(label="▴")
-        self.eject_btn.get_style_context().add_class('music-player-button')
-        self.eject_btn.set_tooltip_text("Add Files")
-        self.eject_btn.connect("clicked", self.add_files)
-        self.eject_btn.connect("button-press-event", self.on_button_press)
-        self.eject_btn.connect("button-release-event", self.on_button_release)
-        
-        # Mode buttons
-        self.shuffle_btn = Gtk.Button(label="⇄ SHUFFLE")
-        self.shuffle_btn.get_style_context().add_class('music-player-text-button')
-        self.shuffle_btn.set_tooltip_text("Toggle Shuffle")
-        self.shuffle_btn.connect("clicked", self.toggle_shuffle)
-        self.shuffle_btn.connect("button-press-event", self.on_button_press)
-        self.shuffle_btn.connect("button-release-event", self.on_button_release)
-        
-        self.repeat_btn = Gtk.Button(label="↻ REPEAT")
-        self.repeat_btn.get_style_context().add_class('music-player-text-button')
-        self.repeat_btn.set_tooltip_text("Toggle Repeat")
-        self.repeat_btn.connect("clicked", self.toggle_repeat)
-        self.repeat_btn.connect("button-press-event", self.on_button_press)
-        self.repeat_btn.connect("button-release-event", self.on_button_release)
-        
-        controls_box.pack_start(self.prev_btn, False, False, 0)
-        controls_box.pack_start(self.play_btn, False, False, 0)
-        controls_box.pack_start(self.stop_btn, False, False, 0)
-        controls_box.pack_start(self.next_btn, False, False, 0)
-        controls_box.pack_start(self.eject_btn, False, False, 0)
-        
-        # Spacer
-        spacer = Gtk.Label(label="")
-        controls_box.pack_start(spacer, True, True, 0)
-        
-        controls_box.pack_end(self.repeat_btn, False, False, 0)
-        controls_box.pack_end(self.shuffle_btn, False, False, 0)
-        
-        controls_container.pack_start(controls_box, True, True, 0)
-        return controls_container
-    
+        box = Gtk.Box(spacing=2)
+        for attr, icon, tip, callback in [
+                ('prev_btn', 'previous', 'Previous', self.previous_song),
+                ('play_btn', 'play', 'Play / Pause (Space)', self.toggle_play_pause),
+                ('stop_btn', 'stop', 'Stop (right-click: stop after track)', self.stop_song),
+                ('next_btn', 'next', 'Next', self.next_song),
+                ('eject_btn', 'eject', 'Add files (Ctrl+O)', self.add_files)]:
+            button = self._transport_button(icon, tip, callback)
+            setattr(self, attr, button)
+            box.pack_start(button, False, False, 0)
+        self.stop_btn.connect('button-press-event', self.on_stop_button_press)
+        box.pack_start(Gtk.Label(), True, True, 0)
+        self.shuffle_btn = Gtk.Button(label='SHUFFLE')
+        self.shuffle_btn.connect('clicked', self.toggle_shuffle)
+        self.shuffle_btn.set_tooltip_text('Shuffle: off / tracks / albums (S)')
+        box.pack_start(self.shuffle_btn, False, False, 1)
+        self.repeat_btn = Gtk.Button(label='REPEAT')
+        self.repeat_btn.connect('clicked', self.toggle_repeat)
+        self.repeat_btn.set_tooltip_text('Repeat: off / all / one (R)')
+        box.pack_start(self.repeat_btn, False, False, 1)
+        return box
+
+    def _panel_button(self, name, action):
+        button = Gtk.Button()
+        button.get_style_context().add_class('panel-control')
+        button.set_size_request(28, 28)
+        drawing = Gtk.DrawingArea()
+        drawing.set_size_request(16, 16)
+        drawing.connect('draw', self._draw_panel_control, name, action)
+        button.add(drawing)
+        return button
+
+    def _draw_panel_control(self, widget, cr, name, action):
+        item = self.panels.items.get(name)
+        if not item:
+            return False
+        color = '#152019' if self.theme is THEMES['silver'] else self.theme['text']
+        self._cairo_color(cr, color)
+        cr.set_line_width(1.5)
+        cr.translate((widget.get_allocated_width() - 16) / 2,
+                     (widget.get_allocated_height() - 16) / 2)
+        if action == 'collapse':
+            cr.move_to(3, 8); cr.line_to(13, 8)
+            if item['collapsed']:
+                cr.move_to(8, 3); cr.line_to(8, 13)
+        elif item['attached']:
+            # An arrow leaving a window: detach.
+            cr.move_to(8, 4); cr.line_to(3, 4); cr.line_to(3, 13)
+            cr.line_to(12, 13); cr.line_to(12, 8)
+            cr.move_to(7, 9); cr.line_to(14, 2)
+            cr.move_to(9, 2); cr.line_to(14, 2); cr.line_to(14, 7)
+        else:
+            # A downward arrow into a dock: reattach.
+            cr.move_to(3, 10); cr.line_to(3, 14); cr.line_to(13, 14); cr.line_to(13, 10)
+            cr.move_to(8, 2); cr.line_to(8, 11)
+            cr.move_to(4, 7); cr.line_to(8, 11); cr.line_to(12, 7)
+        cr.stroke()
+        return False
+
+    def _transport_button(self, icon, tooltip, callback):
+        button = Gtk.Button()
+        drawing = Gtk.DrawingArea()
+        drawing.set_size_request(18, 16)
+        drawing.connect('draw', self._draw_transport, icon)
+        button.add(drawing)
+        button.set_tooltip_text(tooltip)
+        button.get_accessible().set_name(tooltip)
+        button.connect('clicked', callback)
+        return button
+
+    def _draw_transport(self, widget, cr, icon):
+        if icon == 'play' and self.is_playing:
+            icon = 'pause'
+        cr.translate(widget.get_allocated_width() / 2 - 8, widget.get_allocated_height() / 2 - 7)
+        color = self.theme['accent'] if icon in ('play', 'pause') else ('#152019' if self.theme is THEMES['silver'] else self.theme['text'])
+        self._cairo_color(cr, color)
+        if icon == 'pause':
+            cr.rectangle(3, 2, 4, 10); cr.rectangle(10, 2, 4, 10)
+        elif icon == 'stop':
+            cr.rectangle(3, 2, 11, 11)
+        elif icon == 'eject':
+            cr.move_to(2, 9); cr.line_to(8, 2); cr.line_to(14, 9); cr.close_path()
+            cr.rectangle(2, 11, 12, 2)
+        else:
+            if icon == 'previous':
+                cr.translate(16, 0); cr.scale(-1, 1)
+            cr.move_to(3, 1); cr.line_to(13, 7); cr.line_to(3, 13); cr.close_path()
+            if icon in ('next', 'previous'):
+                cr.rectangle(13, 1, 2, 12)
+        cr.fill()
+        return False
+
+    @staticmethod
+    def _cairo_color(cr, color, alpha=1):
+        cr.set_source_rgba(*(int(color[i:i+2], 16) / 255 for i in (1, 3, 5)), alpha)
+
     def create_position_slider(self):
         """Bare position scale — lives at the bottom of the LCD display panel."""
         self.position_scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL)
@@ -3204,166 +3566,154 @@ class MusicPlayer(Gtk.Window):
         return self.position_scale
     
     def create_volume_controls(self):
-        vol_container = Gtk.VBox()
-        vol_container.set_margin_top(8)
-        vol_container.set_margin_bottom(8)
-        vol_container.set_margin_start(8)
-        vol_container.set_margin_end(8)
-        
-        vol_box = Gtk.HBox(spacing=20)
-        
-        vol_label = Gtk.Label(label="VOLUME")
-        vol_label.get_style_context().add_class('music-player-label')
-        vol_label.set_size_request(80, -1)
-        vol_box.pack_start(vol_label, False, False, 0)
-        
-        self.volume_scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL)
-        self.volume_scale.set_can_focus(False)
-        self.volume_scale.get_style_context().add_class('volume-slider')
-        self.volume_scale.set_range(0, 1)
-        self.volume_scale.set_value(0.7)
-        self.volume_scale.set_draw_value(True)
-        self.volume_scale.set_tooltip_text("Volume")
-        self.volume_scale.connect("value-changed", self.on_volume_changed)
-        self.volume_scale.connect("format-value", self.format_volume_value)
-        vol_box.pack_start(self.volume_scale, True, True, 0)
-        
-        bal_label = Gtk.Label(label="BALANCE")
-        bal_label.get_style_context().add_class('music-player-label')
-        bal_label.set_size_request(80, -1)
-        vol_box.pack_start(bal_label, False, False, 0)
-        
-        self.balance_scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL)
-        self.balance_scale.set_can_focus(False)
-        self.balance_scale.get_style_context().add_class('music-player-slider')
-        self.balance_scale.get_style_context().add_class('balance-slider')
-        self.balance_scale.set_range(-1, 1)
-        self.balance_scale.set_value(0)
-        self.balance_scale.set_draw_value(True)  # Enable value display
-        self.balance_scale.connect("format-value", self.format_balance_value)  # Connect format function
-        self.balance_scale.connect("value-changed", self.on_balance_changed)
-        self.balance_scale.set_tooltip_text("Balance")
-        vol_box.pack_start(self.balance_scale, True, True, 0)
-        
-        vol_container.pack_start(vol_box, True, True, 0)
-        return vol_container
-    
+        container = Gtk.Grid()
+        container.set_column_homogeneous(True)
+        container.set_column_spacing(0)
+        self.level_controls = container
+        for column, width, label, attr, limits, callback, formatter in (
+                (0, 3, 'VOLUME', 'volume_scale', (0, 1), self.on_volume_changed, self.format_volume_value),
+                (3, 2, 'BALANCE', 'balance_scale', (-1, 1), self.on_balance_changed, self.format_balance_value)):
+            group = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+            group.set_hexpand(True)
+            group.set_margin_start(6 if column else 0)
+            group.set_margin_end(0 if column else 6)
+            header = Gtk.Box()
+            caption = Gtk.Label(label=label, xalign=0)
+            caption.get_style_context().add_class('music-player-label')
+            header.pack_start(caption, True, True, 0)
+            readout = Gtk.Label(xalign=1)
+            readout.get_style_context().add_class('muted')
+            header.pack_end(readout, False, False, 0)
+            group.pack_start(header, False, False, 0)
+            scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, *limits, .01)
+            scale.set_can_focus(True)
+            scale.set_draw_value(False)
+            scale.get_accessible().set_name(label.title())
+            scale.set_tooltip_text('Volume' if column == 0 else 'Balance · double-click to center')
+            setattr(self, attr, scale)
+            scale.connect('value-changed', callback)
+            scale.connect('value-changed', lambda widget, r=readout, f=formatter:
+                          r.set_text(f(widget, widget.get_value())))
+            readout.set_text(formatter(scale, scale.get_value()))
+            if column:
+                scale.connect('button-press-event', self._eq_scale_press)
+            group.pack_start(scale, False, False, 0)
+            container.attach(group, column, 0, width, 1)
+        return container
+
     def create_equalizer(self):
-        eq_frame = Gtk.Frame()
-        eq_frame.get_style_context().add_class('music-player-frame')
-        
-        eq_box = Gtk.VBox(spacing=20)
-        eq_box.set_vexpand(True)  # Expand vertically
-        eq_box.set_hexpand(True)  # Expand horizontally
-        eq_box.set_margin_top(10)
-        eq_box.set_margin_bottom(10)
-        eq_box.set_margin_start(10)
-        eq_box.set_margin_end(10)
-        
-        # EQ header: label + Winamp-style ON toggle
-        eq_header = Gtk.HBox()
-        eq_label = Gtk.Label(label="EQUALIZER")
-        eq_label.get_style_context().add_class('music-player-label')
-        eq_label.set_halign(Gtk.Align.START)
-        eq_header.pack_start(eq_label, False, False, 0)
-
-        self.eq_on_btn = Gtk.Button(label="ON")
-        self.eq_on_btn.get_style_context().add_class('music-player-text-button')
-        self.eq_on_btn.get_style_context().add_class('eq-on-button')
-        if self.eq_enabled:
-            self.eq_on_btn.get_style_context().add_class('active')
-        self.eq_on_btn.set_tooltip_text("Enable/bypass the equalizer and preamp")
-        self.eq_on_btn.connect("clicked", self.toggle_eq_enabled)
-        eq_header.pack_end(self.eq_on_btn, False, False, 0)
-        eq_box.pack_start(eq_header, False, False, 0)
-
-        # Frequency bars - traditional equalizer bars
-        freq_box = Gtk.HBox(spacing=15, homogeneous=True)
-        freq_box.set_vexpand(True)  # Expand vertically
-        freq_box.set_hexpand(True)  # Expand horizontally
-        
-        frequencies = EQ_FREQUENCIES
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        controls = Gtk.Box(spacing=4)
+        self.eq_on_btn = Gtk.Button(label='ON')
+        self.eq_on_btn.connect('clicked', self.toggle_eq_enabled)
+        controls.pack_start(self.eq_on_btn, False, False, 0)
+        self.preset_button = Gtk.Button(label='Presets ▾')
+        self.preset_button.connect('clicked', self._preset_popup)
+        controls.pack_start(self.preset_button, False, False, 0)
+        reset = Gtk.Button(label='Reset')
+        reset.set_tooltip_text('Reset all EQ bands and preamp to 0 dB')
+        reset.connect('clicked', self._reset_eq)
+        controls.pack_start(reset, False, False, 0)
+        self.eq_status = Gtk.Label(xalign=1)
+        self.eq_status.set_ellipsize(Pango.EllipsizeMode.END)
+        self.eq_status.get_style_context().add_class('muted')
+        controls.pack_end(self.eq_status, True, True, 0)
+        box.pack_start(controls, False, False, 0)
+        bands = Gtk.Box(spacing=1, homogeneous=True)
         self.eq_bars = []
-        # EQ gain settings, 0..1 with 0.5 = flat (0 dB). May be overridden by config.
-        if not getattr(self, 'eq_values', None):
-            self.eq_values = [0.5] * len(frequencies)
+        self._syncing_eq = True
+        for index, label in enumerate(['PRE'] + EQ_FREQUENCIES):
+            column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            preamp = index == 0
+            lo, hi = (-PREAMP_DB_RANGE, PREAMP_DB_RANGE) if preamp else (EQ_GAIN_MIN, EQ_GAIN_MAX)
+            scale = Gtk.Scale.new_with_range(Gtk.Orientation.VERTICAL, lo, hi, .5)
+            scale.set_inverted(True)
+            scale.set_size_request(24, 68)
+            scale.set_draw_value(False)
+            scale.add_mark(0, Gtk.PositionType.LEFT, None)
+            scale.get_accessible().set_name('Preamp' if preamp else label + ' Hz equalizer gain')
+            scale.connect('value-changed', self._eq_scale_changed, index - 1)
+            scale.connect('button-press-event', self._eq_scale_press)
+            column.pack_start(scale, True, True, 0)
+            value = Gtk.Label()
+            value.get_style_context().add_class('muted')
+            scale._gain_label = value
+            column.pack_start(value, False, False, 0)
+            caption = Gtk.Label(label=label)
+            caption.get_style_context().add_class('muted')
+            column.pack_start(caption, False, False, 0)
+            bands.pack_start(column, True, True, 0)
+            if preamp:
+                self.preamp_bar = scale
+            else:
+                self.eq_bars.append(scale)
+        box.pack_start(bands, False, False, 0)
+        self._syncing_eq = False
+        self._sync_eq_controls()
+        return box
 
-        # Preamp bar (master gain), Winamp-style, ahead of the bands
-        pre_box = Gtk.VBox(spacing=8)
-        pre_box.set_vexpand(True)
-        pre_box.set_hexpand(True)
-        self.preamp_bar = Gtk.DrawingArea()
-        self.preamp_bar.get_style_context().add_class('eq-bar')
-        self.preamp_bar.set_vexpand(True)
-        self.preamp_bar.set_hexpand(True)
-        self.preamp_bar.set_tooltip_text(f"Preamp (±{int(PREAMP_DB_RANGE)} dB)")
-        self.preamp_bar.set_size_request(-1, 100)
-        self.preamp_bar.connect("draw", self.draw_preamp_bar)
-        pre_events = Gtk.EventBox()
-        pre_events.add(self.preamp_bar)
-        pre_events.set_vexpand(True)
-        pre_events.set_hexpand(True)
-        pre_events.set_size_request(-1, 100)
-        pre_events.connect("button-press-event", self.on_preamp_clicked)
-        pre_events.connect("motion-notify-event", self.on_preamp_drag)
-        pre_events.set_events(Gdk.EventMask.BUTTON_PRESS_MASK
-                              | Gdk.EventMask.POINTER_MOTION_MASK)
-        pre_box.pack_start(pre_events, True, True, 0)
-        pre_label = Gtk.Label(label="PRE")
-        pre_label.get_style_context().add_class('status-indicator')
-        pre_label.set_size_request(-1, 20)
-        pre_label.set_halign(Gtk.Align.CENTER)
-        pre_box.pack_start(pre_label, False, False, 0)
-        freq_box.pack_start(pre_box, True, True, 0)
+    def _eq_scale_changed(self, scale, index):
+        if self._syncing_eq:
+            return
+        db = scale.get_value()
+        if index < 0:
+            self.preamp_value = (db / PREAMP_DB_RANGE + 1) / 2
+            self._apply_preamp()
+        else:
+            self.eq_values[index] = self.db_to_eq_value(db)
+            self._apply_eq_band(index)
+        self._sync_eq_controls()
+        self.schedule_save_config()
 
-        for i, freq in enumerate(frequencies):
-            bar_box = Gtk.VBox(spacing=8)
-            bar_box.set_vexpand(True)  # Expand vertically
-            bar_box.set_hexpand(True)  # Expand horizontally
-            
-            # Traditional equalizer bar using DrawingArea for full control
-            bar = Gtk.DrawingArea()
-            bar.get_style_context().add_class('eq-bar')
-            bar.set_vexpand(True)  # Expand vertically
-            bar.set_hexpand(True)  # Expand horizontally
-            bar.set_halign(Gtk.Align.FILL)  # Fill horizontally
-            bar.set_valign(Gtk.Align.FILL)  # Fill vertically
-            bar.set_tooltip_text(f"{freq} Hz")
-            # Only set height, let width expand to fill available space
-            bar.set_size_request(-1, 100)  # -1 means no width constraint, 100 height
-            bar.connect("draw", self.draw_eq_bar, i)
-            self.eq_bars.append(bar)
-            
-            # Make bar clickable for adjustment
-            event_box = Gtk.EventBox()
-            event_box.add(bar)
-            event_box.set_vexpand(True)  # Expand vertically
-            event_box.set_hexpand(True)  # Expand horizontally
-            event_box.set_halign(Gtk.Align.FILL)  # Fill horizontally
-            event_box.set_valign(Gtk.Align.FILL)  # Fill vertically
-            # Only set height, let width expand to fill available space
-            event_box.set_size_request(-1, 100)  # -1 means no width constraint, 100 height
-            event_box.connect("button-press-event", self.on_eq_bar_clicked, i)
-            event_box.connect("motion-notify-event", self.on_eq_bar_drag, i)
-            event_box.set_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.POINTER_MOTION_MASK)
-            
-            # Pack the event box to fill the full width
-            bar_box.pack_start(event_box, True, True, 0)
-            
-            # Frequency label
-            freq_label = Gtk.Label(label=freq)
-            freq_label.get_style_context().add_class('status-indicator')
-            freq_label.set_size_request(-1, 20)
-            freq_label.set_halign(Gtk.Align.CENTER)  # Center the frequency label
-            bar_box.pack_start(freq_label, False, False, 0)
-            
-            # Pack the bar box to fill the full width in the frequency box
-            freq_box.pack_start(bar_box, True, True, 0)
-        
-        eq_box.pack_start(freq_box, False, False, 0)
-        eq_frame.add(eq_box)
-        
-        return eq_frame
+    def _eq_scale_press(self, scale, event):
+        if event.button == 1 and event.type == Gdk.EventType.DOUBLE_BUTTON_PRESS:
+            scale.set_value(0)
+            return True
+        if event.button == 3:
+            self.show_eq_preset_menu(event)
+            return True
+        return False
+
+    def _sync_eq_controls(self):
+        if not hasattr(self, 'eq_status'):
+            return
+        self._syncing_eq = True
+        try:
+            scales = [self.preamp_bar] + self.eq_bars
+            gains = [(self.preamp_value * 2 - 1) * PREAMP_DB_RANGE] + [self.eq_value_to_db(v) for v in self.eq_values]
+            for scale, gain in zip(scales, gains):
+                scale.set_value(gain)
+                scale._gain_label.set_text(f'{gain:+g}')
+                tip = f'{gain:+g} dB · double-click to reset · arrows adjust'
+                if self.direct_mode:
+                    tip += ' · stored for later; Direct Mode bypasses EQ'
+                elif not self.eq_enabled:
+                    tip += ' · stored for later; equalizer is off'
+                scale.set_tooltip_text(tip)
+                context = scale.get_style_context()
+                (context.add_class if self.direct_mode or not self.eq_enabled else context.remove_class)('eq-bypassed')
+            self.eq_on_btn.set_label('Bypassed' if self.direct_mode else 'ON' if self.eq_enabled else 'OFF')
+            self.eq_on_btn.set_sensitive(not self.direct_mode)
+            self.eq_on_btn.set_tooltip_text('Direct Mode bypasses EQ; disable it in Audio Output to use the equalizer'
+                                            if self.direct_mode else 'Enable / disable the equalizer')
+            context = self.eq_on_btn.get_style_context()
+            (context.add_class if self.eq_enabled and not self.direct_mode else context.remove_class)('active')
+            self.eq_status.set_text('Bypassed · Direct Mode' if self.direct_mode
+                                    else 'Equalizer off' if not self.eq_enabled else self._current_preset_name() or 'Custom')
+        finally:
+            self._syncing_eq = False
+
+    def _reset_eq(self, *_args):
+        self.preamp_value = .5
+        self.apply_eq_preset('Flat')
+        self._sync_eq_controls()
+
+    def _preset_popup(self, button):
+        menu = Gtk.Menu()
+        self._append_eq_preset_items(menu)
+        menu.show_all()
+        self._preset_menu = menu
+        menu.popup_at_widget(button, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, None)
 
     def apply_eq_preset(self, name):
         """Apply a named preset from EQ_PRESETS to all bands."""
@@ -3413,138 +3763,6 @@ class MusicPlayer(Gtk.Window):
         self._eq_menu = menu  # keep referenced while open
         menu.popup_at_pointer(event)
     
-    def on_eq_bar_clicked(self, widget, event, index):
-        """Handle equalizer bar click"""
-        if event.button == 1:  # Left mouse button
-            # Calculate value based on click position
-            allocation = widget.get_allocation()
-            height = allocation.height
-            if height <= 0:
-                return True
-            value = max(0.0, min(1.0, 1.0 - (event.y / height)))  # Inverted bar
-            self.eq_values[index] = value
-            self._apply_eq_band(index)
-            widget.queue_draw()  # move the gain marker
-            self.schedule_save_config()
-        elif event.button == 3:  # Right mouse button: preset menu
-            self.show_eq_preset_menu(event)
-        return True
-
-    def on_eq_bar_drag(self, widget, event, index):
-        """Handle equalizer bar drag"""
-        if event.state & Gdk.ModifierType.BUTTON1_MASK:  # Left mouse button pressed
-            allocation = widget.get_allocation()
-            height = allocation.height
-            if height <= 0:
-                return True
-            value = max(0.0, min(1.0, 1.0 - (event.y / height)))  # Inverted bar
-            self.eq_values[index] = value
-            self._apply_eq_band(index)
-            widget.queue_draw()  # move the gain marker
-            self.schedule_save_config()
-        return True
-    
-    def draw_eq_bar(self, widget, cr, index):
-        """Flat LED-ladder bar: dark well, hairline border, segmented solid-green
-        level fill, faint center tick, near-white gain marker."""
-        allocation = widget.get_allocation()
-        width = allocation.width
-        height = allocation.height
-
-        # Well background
-        cr.set_source_rgb(0.020, 0.024, 0.020)  # #050605
-        cr.rectangle(0, 0, width, height)
-        cr.fill()
-
-        # Crisp 1px hairline border (#2b302c)
-        cr.set_source_rgb(0.169, 0.188, 0.173)
-        cr.set_line_width(1)
-        cr.rectangle(0.5, 0.5, width - 1, height - 1)
-        cr.stroke()
-
-        # Faint 0 dB center tick
-        cr.set_source_rgba(1, 1, 1, 0.10)
-        cr.rectangle(2, height / 2 - 0.5, width - 4, 1)
-        cr.fill()
-
-        # Level fill: segmented LED ladder, solid accent green, bottom-up
-        value = self.spectrum_levels[index] if index < len(self.spectrum_levels) else 0.0
-        if value > 0:
-            lit = int(value * (height - 4))
-            top_limit = (height - 2) - lit
-            cr.set_source_rgb(0.102, 0.878, 0.0)  # #1ae000
-            y = height - 2
-            while y - 3 >= top_limit:
-                cr.rectangle(2, y - 3, width - 4, 3)
-                y -= 5  # 3px segment + 2px gap
-            cr.fill()
-
-        # Gain marker: near-white (never vanishes against the green fill), kept
-        # translucent so ten flat bars don't read as a wall of white lines.
-        # Dimmed further while the EQ is bypassed.
-        gain = self.eq_values[index] if index < len(self.eq_values) else 0.5
-        marker_y = 2 + (1.0 - gain) * (height - 4)
-        cr.set_source_rgba(0.941, 1.0, 0.941, 0.55 if self.eq_enabled else 0.2)
-        cr.rectangle(2, marker_y - 1, width - 4, 2)
-        cr.fill()
-
-        return False
-
-    def draw_preamp_bar(self, widget, cr):
-        """Preamp: same visual language as the band bars — well, hairline,
-        center tick, marker — but no spectrum fill (it isn't a band)."""
-        allocation = widget.get_allocation()
-        width = allocation.width
-        height = allocation.height
-
-        cr.set_source_rgb(0.020, 0.024, 0.020)  # well #050605
-        cr.rectangle(0, 0, width, height)
-        cr.fill()
-        cr.set_source_rgb(0.169, 0.188, 0.173)  # hairline #2b302c
-        cr.set_line_width(1)
-        cr.rectangle(0.5, 0.5, width - 1, height - 1)
-        cr.stroke()
-        cr.set_source_rgba(1, 1, 1, 0.10)       # unity (0 dB) tick
-        cr.rectangle(2, height / 2 - 0.5, width - 4, 1)
-        cr.fill()
-
-        # Gain fill from center to the marker so the amount of boost/cut reads
-        # at a glance (accent green up, dimmer green down)
-        marker_y = 2 + (1.0 - self.preamp_value) * (height - 4)
-        mid = height / 2
-        if self.eq_enabled and abs(marker_y - mid) > 1:
-            cr.set_source_rgba(0.102, 0.878, 0.0, 0.35)
-            top = min(marker_y, mid)
-            cr.rectangle(2, top, width - 4, abs(marker_y - mid))
-            cr.fill()
-
-        cr.set_source_rgba(0.941, 1.0, 0.941, 0.55 if self.eq_enabled else 0.2)
-        cr.rectangle(2, marker_y - 1, width - 4, 2)
-        cr.fill()
-        return False
-
-    def _set_preamp_from_y(self, widget, y):
-        height = widget.get_allocation().height
-        if height <= 0:
-            return
-        self.preamp_value = max(0.0, min(1.0, 1.0 - (y / height)))
-        self._apply_preamp()
-        self.preamp_bar.queue_draw()
-        self.schedule_save_config()
-
-    def on_preamp_clicked(self, widget, event):
-        if event.button == 1:
-            self._set_preamp_from_y(widget, event.y)
-        elif event.button == 3:
-            self.show_eq_preset_menu(event)
-        return True
-
-    def on_preamp_drag(self, widget, event):
-        if event.state & Gdk.ModifierType.BUTTON1_MASK:
-            self._set_preamp_from_y(widget, event.y)
-        return True
-    
-    
     def log_debug(self, message):
         """Debug logging, opt-in via LLAMAAMP_DEBUG=1"""
         if DEBUG:
@@ -3552,61 +3770,65 @@ class MusicPlayer(Gtk.Window):
     
     
     def create_playlist(self):
-        playlist_frame = Gtk.Frame()
-        playlist_frame.get_style_context().add_class('music-player-frame')
+        playlist_box = Gtk.VBox(spacing=5)
+        playlist_box.set_margin_top(0)
+        playlist_box.set_margin_bottom(0)
+        playlist_box.set_margin_start(0)
+        playlist_box.set_margin_end(0)
         
-        playlist_box = Gtk.VBox(spacing=20)
-        playlist_box.set_margin_top(10)
-        playlist_box.set_margin_bottom(10)
-        playlist_box.set_margin_start(10)
-        playlist_box.set_margin_end(10)
-        
-        # Playlist header
-        header_box = Gtk.HBox()
-        playlist_label = Gtk.Label(label="PLAYLIST")
-        playlist_label.get_style_context().add_class('music-player-label')
-        playlist_label.set_halign(Gtk.Align.START)
-        header_box.pack_start(playlist_label, False, False, 0)
-        
-        self.playlist_info = Gtk.Label(label="0 files")
-        self.playlist_info.get_style_context().add_class('music-player-label')
-        header_box.pack_end(self.playlist_info, False, False, 0)
-        
-        playlist_box.pack_start(header_box, False, False, 0)
+        self.playlist_info = Gtk.Label(label='0 tracks')
+        self.playlist_info.get_style_context().add_class('muted')
 
         # Type-to-find: scrolls to matches without filtering the model
         # (a TreeModelFilter would break drag-reorder and index arithmetic)
         self.search_entry = Gtk.SearchEntry()
-        self.search_entry.set_placeholder_text("Search playlist…")
+        self.search_entry.set_placeholder_text("Find in playlist…")
         self.search_entry.get_style_context().add_class('playlist-search')
         self.search_entry.connect("search-changed",
                                   lambda e: self._search_step(restart=True))
         self.search_entry.connect("activate",
                                   lambda e: self._search_step(restart=False))
         self.search_entry.connect("stop-search", self._search_escape)
-        playlist_box.pack_start(self.search_entry, False, False, 0)
+        find_box = Gtk.Box(spacing=5)
+        find_box.pack_start(self.search_entry, True, True, 0)
+        self.search_count = Gtk.Label()
+        self.search_count.get_style_context().add_class('muted')
+        find_box.pack_start(self.search_count, False, False, 0)
+        playlist_box.pack_start(find_box, False, False, 0)
 
         # Scrollable playlist
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scrolled.set_size_request(-1, 200)  # Reduced height to make room for debug area
+        scrolled.set_size_request(-1, 96)  # Four rows at the minimum window height
         
-        self.playlist_store = Gtk.ListStore(str, str, int, str)  # path, display, number, duration
+        self.playlist_store = Gtk.ListStore(str, str, int, str, str, str)  # path, display, number, duration
         self.playlist_view = Gtk.TreeView(model=self.playlist_store)
         self.playlist_view.get_style_context().add_class('playlist')
+        self.playlist_view.set_has_tooltip(True)
+        self.playlist_view.connect('query-tooltip', self._playlist_tooltip)
         self.playlist_view.set_can_focus(True)  # Allow keyboard focus
         
+        marker = Gtk.CellRendererText()
+        marker_col = Gtk.TreeViewColumn('', marker, text=5)
+        marker_col.set_cell_data_func(marker, self._zebra_bg)
+        marker_col.set_min_width(42)
+        self.playlist_view.append_column(marker_col)
         # Track number column
         track_renderer = Gtk.CellRendererText()
         track_column = Gtk.TreeViewColumn("", track_renderer, text=2)
         track_column.set_cell_data_func(track_renderer, self._zebra_bg)
-        track_column.set_min_width(60)
+        track_column.set_min_width(30)
         self.playlist_view.append_column(track_column)
         
         # Song name column
         song_renderer = Gtk.CellRendererText()
+        song_renderer.set_property('ellipsize', Pango.EllipsizeMode.END)
+        song_renderer.set_property('height', 24)
         song_column = Gtk.TreeViewColumn("", song_renderer, text=1)
         song_column.set_cell_data_func(song_renderer, self._zebra_bg)
+        song_column.set_expand(True)
+        song_column.set_sizing(Gtk.TreeViewColumnSizing.FIXED)
+        song_column.set_min_width(60)
         self.playlist_view.append_column(song_column)
 
         # Track duration, right-aligned
@@ -3634,6 +3856,7 @@ class MusicPlayer(Gtk.Window):
         self.playlist_view.connect("drag-data-received", self.on_view_drag_data_received)
         self.playlist_store.connect("row-inserted", self.on_store_rows_changed)
         self.playlist_store.connect("row-deleted", self.on_store_rows_changed)
+        self.playlist_store.connect("rows-reordered", self.on_store_rows_changed)
 
         # Connect keyboard events for deletion
         self.playlist_view.connect("key-press-event", self.on_playlist_key_press)
@@ -3649,55 +3872,25 @@ class MusicPlayer(Gtk.Window):
         playlist_box.pack_start(scrolled, True, True, 0)
         
         # Playlist buttons
-        buttons_box = Gtk.HBox(spacing=15, homogeneous=True)
-        
-        add_btn = Gtk.Button(label="ADD FILES")
-        add_btn.get_style_context().add_class('music-player-text-button')
-        add_btn.set_tooltip_text("Add Files to Playlist")
-        add_btn.connect("clicked", self.add_files)
-        
-        remove_btn = Gtk.Button(label="REMOVE")
-        remove_btn.get_style_context().add_class('music-player-text-button')
-        remove_btn.set_tooltip_text("Remove Selected from Playlist")
-        remove_btn.connect("clicked", self.remove_selected)
-        
-        clear_btn = Gtk.Button(label="CLEAR")
-        clear_btn.get_style_context().add_class('music-player-text-button')
-        clear_btn.set_tooltip_text("Clear Playlist")
-        clear_btn.connect("clicked", self.clear_playlist)
-        
-        buttons_box.pack_start(add_btn, True, True, 0)
-        buttons_box.pack_start(remove_btn, True, True, 0)
-        buttons_box.pack_start(clear_btn, True, True, 0)
+        tools = Gtk.Box(spacing=4)
+        add = Gtk.Button(label='Add ▾')
+        add.connect('clicked', self._add_popup)
+        tools.pack_start(add, False, False, 0)
+        playlist = Gtk.Button(label='Playlist ▾')
+        playlist.connect('clicked', self._playlist_popup)
+        tools.pack_start(playlist, False, False, 0)
+        remove = Gtk.Button(label='Remove')
+        remove.set_tooltip_text('Remove selected tracks (Delete) · Ctrl+Z to undo')
+        remove.connect('clicked', self.remove_selected)
+        tools.pack_start(remove, False, False, 0)
+        self.feedback_label = Gtk.Label(xalign=1)
+        self.feedback_label.set_margin_end(20)  # leave room for the corner grip
+        self.feedback_label.set_ellipsize(Pango.EllipsizeMode.END)
+        self.feedback_label.get_style_context().add_class('muted')
+        tools.pack_end(self.feedback_label, True, True, 0)
+        playlist_box.pack_start(tools, False, False, 0)
 
-        playlist_box.pack_start(buttons_box, False, False, 0)
-
-        # Second row: folder add, missing-file cleanup, M3U export
-        tools_box = Gtk.HBox(spacing=15, homogeneous=True)
-
-        folder_btn = Gtk.Button(label="ADD DIR")
-        folder_btn.get_style_context().add_class('music-player-text-button')
-        folder_btn.set_tooltip_text("Add a folder (recursive)")
-        folder_btn.connect("clicked", self.add_folder)
-
-        missing_btn = Gtk.Button(label="FIX LIST")
-        missing_btn.get_style_context().add_class('music-player-text-button')
-        missing_btn.set_tooltip_text("Remove missing files from the playlist")
-        missing_btn.connect("clicked", self.remove_missing)
-
-        export_btn = Gtk.Button(label="EXPORT")
-        export_btn.get_style_context().add_class('music-player-text-button')
-        export_btn.set_tooltip_text("Export playlist as M3U")
-        export_btn.connect("clicked", self.export_m3u)
-
-        tools_box.pack_start(folder_btn, True, True, 0)
-        tools_box.pack_start(missing_btn, True, True, 0)
-        tools_box.pack_start(export_btn, True, True, 0)
-
-        playlist_box.pack_start(tools_box, False, False, 0)
-
-        playlist_frame.add(playlist_box)
-        return playlist_frame
+        return playlist_box
     
     # Audio control methods
     def toggle_play_pause(self, button):
@@ -3735,73 +3928,154 @@ class MusicPlayer(Gtk.Window):
                 return
         
         # No available songs found
+        self.stop_song(None)
         self.current_song = None
         self._set_title_text("❌ No available files in playlist")
         self.info_label.set_text("All files are missing - please re-add music files")
     
     def stop_song(self, button):
-        self._gapless_next = None
+        self._invalidate_next()
+        self._pending_seek_ns = None
         self.player.set_state(Gst.State.NULL)
-        self._sync_play_ui(False)
+        self._sync_play_ui(False, stopped=True)
         self.position = 0
         self.position_scale.set_value(0)
         self.time_display.set_text("00:00")
     
-    def next_song(self, button):
-        if not self.playlist:
+    def _invalidate_next(self):
+        with self._gapless_lock:
+            self._next_generation += 1
+            self._next_snapshot = None
+            pending = self._gapless_next
+            self._gapless_next = None
+        # A handed-off URI cannot simply be forgotten: reset the preroll to
+        # the current track when an edit supersedes it.
+        if pending and self.current_song and not self._destroyed:
+            position = self._current_position_ns()
+            self.player.set_state(Gst.State.NULL)
+            uri = self.current_song if self._is_stream_url(self.current_song) else Gst.filename_to_uri(self.current_song)
+            self.player.set_property('uri', uri)
+            self._pending_seek_ns = position
+            if self.is_playing:
+                self.player.set_state(Gst.State.PLAYING)
+
+    def _prepare_next(self):
+        if (self._destroyed or not self.gapless or self.repeat_mode == REPEAT_ONE
+                or self._sleep_after_track or self._loading or getattr(self, '_switching_output', False)):
             return
-        self._pending_seek_ns = None  # manual nav cancels resume-seek
-        playable = [i for i, p in enumerate(self.playlist) if self._playable(p)]
-        if self.shuffle == SHUFFLE_ALBUMS and playable:
-            nxt = self._album_next_index(playable)
-        elif self.shuffle == SHUFFLE_TRACKS and len(self.playlist) > 1:
-            nxt = self.current_index
-            while nxt == self.current_index:
-                nxt = random.randint(0, len(self.playlist) - 1)
-        elif self.shuffle != SHUFFLE_OFF:
-            nxt = self.current_index
+        with self._gapless_lock:
+            if self._next_snapshot or self._gapless_next:
+                return
+        key = self.order.next_id(self._playable, self.shuffle, self.repeat_mode)
+        if key is None:
+            return
+        path = dict(self.order.entries)[key]
+        uri = path if self._is_stream_url(path) else Gst.filename_to_uri(os.path.abspath(path))
+        with self._gapless_lock:
+            self._next_snapshot = (key, path, uri, self._next_generation)
+
+    def _refresh_order(self):
+        self._invalidate_next()
+        self.order.reconcile(zip(self.entry_ids, self.playlist))
+        self._title_rows = {}
+        for row in self.playlist_store:
+            reference = Gtk.TreeRowReference.new(self.playlist_store, row.path)
+            self._title_rows.setdefault(row[0], []).append(reference)
+        self._playlist_titles = {path: title for path, title in self._playlist_titles.items()
+                                 if path in self._title_rows}
+        self._play_next = self.order.queue
+        self._update_queue_markers()
+        self._prepare_next()
+
+    def _remember_playlist(self):
+        if self._undoing:
+            return
+        self._invalidate_next()
+        self._undo.append((list(self.playlist), list(self.entry_ids), list(self.order.queue),
+                           self._playlist_name))
+
+    def _playlist_edited(self, rebuild=True):
+        current = self.order.current
+        if rebuild:
+            with self._store_guard():
+                self.playlist_store.clear()
+                for i, (key, path) in enumerate(zip(self.entry_ids, self.playlist)):
+                    name = self._display_name(path)
+                    if not self._playable(path):
+                        name += ' [MISSING]'
+                    self.playlist_store.append([path, name, i + 1, self._duration_str(path), key, ''])
+        if current in self.entry_ids:
+            self.current_index = self.entry_ids.index(current)
         else:
-            nxt = self.current_index + 1
-            if nxt >= len(self.playlist):
-                if self.repeat_mode == REPEAT_ALL:
-                    nxt = 0
-                else:
-                    self.stop_song(None)
-                    return
-        self.current_index = nxt
-        self.load_song(self.current_index)
-        if self.is_playing:
-            self.player.set_state(Gst.State.PLAYING)
-            self._sync_play_ui(True)
+            self.stop_song(None)
+            self.current_song = None
+            self.order.current = None
+            self.current_index = 0
+            self._set_title_text(DEFAULT_SONG_TEXT)
+            self.info_label.set_text('')
+            self._set_album_art(None)
+        self._renumber_rows()
+        self._refresh_order()
+        self.update_playlist_info()
+        self.save_playlist()
+        self.schedule_save_config()
+        self._queue_playlist_metadata()
+        self._search_step(True)
+
+    def undo_playlist(self, *_args):
+        if not self._undo:
+            self.show_drop_feedback('Nothing to undo')
+            return
+        self._undoing = True
+        try:
+            self._invalidate_next()
+            paths, keys, queued, name = self._undo.pop()
+            self.playlist, self.entry_ids = paths, keys
+            self.order.queue = deque(queued)
+            self._playlist_name = name
+            self._playlist_edited()
+        finally:
+            self._undoing = False
+        self.show_drop_feedback('Playlist edit undone')
+
+    def next_song(self, button):
+        self._navigate(auto=False)
+
+    def _navigate(self, auto=False, after_error=False):
+        was_playing = self.is_playing
+        mode = REPEAT_OFF if after_error and self.repeat_mode == REPEAT_ONE else self.repeat_mode
+        key = self.order.next_id(self._playable, self.shuffle, mode, auto)
+        if key is None:
+            self.stop_song(None)
+            return
+        self.load_song(self.entry_ids.index(key))
+        if auto or was_playing:
+            self._play_current()
 
     def previous_song(self, button):
         if not self.playlist:
             return
-        self._pending_seek_ns = None  # manual nav cancels resume-seek
-        playable = [i for i, p in enumerate(self.playlist) if self._playable(p)]
-        if self.shuffle == SHUFFLE_ALBUMS and playable:
-            prv = self._album_prev_index(playable)
-        elif self.shuffle == SHUFFLE_TRACKS and len(self.playlist) > 1:
-            prv = self.current_index
-            while prv == self.current_index:
-                prv = random.randint(0, len(self.playlist) - 1)
-        elif self.shuffle != SHUFFLE_OFF:
-            prv = self.current_index
+        was_playing = self.is_playing
+        if self.shuffle != SHUFFLE_OFF:
+            key = self.order.previous_id(self._playable)
+            index = self.entry_ids.index(key) if key in self.entry_ids else None
         else:
-            prv = self.current_index - 1
-            if prv < 0:
-                prv = len(self.playlist) - 1 if self.repeat_mode == REPEAT_ALL else 0
-        self.current_index = prv
-        self.load_song(self.current_index)
-        if self.is_playing:
-            self.player.set_state(Gst.State.PLAYING)
-            self._sync_play_ui(True)
-    
-    # ---- Marquee title ----
+            earlier = [i for i in range(self.current_index) if self._playable(self.playlist[i])]
+            index = earlier[-1] if earlier else self.current_index
+            if not earlier and self.repeat_mode == REPEAT_ALL:
+                available = [i for i, path in enumerate(self.playlist) if self._playable(path)]
+                index = available[-1] if available else None
+        if index is not None:
+            self.load_song(index)
+            if was_playing:
+                self._play_current()
 
     def _set_title_text(self, text):
         """Central song-title setter: short titles display plainly; long ones
         scroll Winamp-style through a fixed 44-char window."""
+        if hasattr(self, 'shade_title'):
+            self.shade_title.set_text(text)
+            self.shade_title.set_tooltip_text(text)
         self._title_full = text
         if len(text) <= MARQUEE_WINDOW:
             self._marquee_stop()
@@ -3815,7 +4089,7 @@ class MusicPlayer(Gtk.Window):
         self._marquee_hold = MARQUEE_HOLD_TICKS
         self.song_label.set_text(text[:MARQUEE_WINDOW])
         if getattr(self, '_marquee_id', None) is None:
-            self._marquee_id = GLib.timeout_add(MARQUEE_TICK_MS, self._marquee_tick)
+            self._marquee_id = self.tasks.timeout_add(MARQUEE_TICK_MS, self._marquee_tick)
 
     def _marquee_tick(self):
         if self._marquee_hold > 0:
@@ -3831,7 +4105,7 @@ class MusicPlayer(Gtk.Window):
 
     def _marquee_stop(self):
         if getattr(self, '_marquee_id', None) is not None:
-            GLib.source_remove(self._marquee_id)
+            self.tasks.source_remove(self._marquee_id)
             self._marquee_id = None
 
     def _refresh_song_label(self):
@@ -3858,6 +4132,8 @@ class MusicPlayer(Gtk.Window):
             return
         # New load generation: stale async results (probes, art, bus tags) are ignored
         self._load_gen += 1
+        self._invalidate_next()
+        self.analyzer_state.reset()
         self._pending_seek_ns = None
         self._gapless_next = None   # manual load supersedes any prerolled next track
         was_loading = self._loading
@@ -3891,7 +4167,7 @@ class MusicPlayer(Gtk.Window):
                 self.current_song = None
                 self._loaded_uri = None
                 self.player.set_state(Gst.State.NULL)
-                self._sync_play_ui(False)
+                self._sync_play_ui(False, stopped=True)
                 song_name = self._display_name(file_path)
                 self._set_title_text(f"❌ File not found: {song_name}")
                 self.info_label.set_text("File missing - please re-add to playlist")
@@ -3914,10 +4190,14 @@ class MusicPlayer(Gtk.Window):
             self._post_load_ui(index, file_path)
         finally:
             self._loading = was_loading
+            self._prepare_next()
 
     def _post_load_ui(self, index, file_path):
         """Refresh everything that presents the current track (shared between
         load_song and the gapless handoff commit)."""
+        self.order.select(self.entry_ids[index])
+        if self.is_playing:
+            self.order.commit(self.order.current)
         self._refresh_song_label()
         self._update_album_art(file_path)
         self.get_audio_properties(file_path)
@@ -3927,6 +4207,8 @@ class MusicPlayer(Gtk.Window):
         self._scrobble_reset()
         self._mpris_notify_track()
         self._notify_track(getattr(self, '_title_full', '') or self._display_name(file_path))
+        self._update_queue_markers()
+        self._prepare_next()
 
     def _mpris_notify_track(self):
         self._mpris_emit({
@@ -3946,6 +4228,7 @@ class MusicPlayer(Gtk.Window):
             self.playlist_store.set_value(tree_iter, 1, missing_display)
     
     def toggle_shuffle(self, button):
+        self._invalidate_next()
         # Cycle OFF -> TRACKS -> ALBUMS -> OFF
         self.shuffle = (self.shuffle + 1) % 3
         self.update_shuffle_button()
@@ -3955,6 +4238,7 @@ class MusicPlayer(Gtk.Window):
         self._mpris_emit({'Shuffle': GLib.Variant('b', self.shuffle != SHUFFLE_OFF)})
 
     def toggle_repeat(self, button):
+        self._invalidate_next()
         # Cycle OFF -> ALL -> ONE -> OFF
         self.repeat_mode = (self.repeat_mode + 1) % 3
         self.update_repeat_button()
@@ -4053,7 +4337,7 @@ class MusicPlayer(Gtk.Window):
                     p = os.path.join(root, f)
                     if self.is_audio_file(p):
                         found.append(p)
-            GLib.idle_add(self._folder_walk_done, folder, found)
+            self.tasks.idle_add(self._folder_walk_done, folder, found)
 
         threading.Thread(target=walk, daemon=True).start()
 
@@ -4065,36 +4349,16 @@ class MusicPlayer(Gtk.Window):
         return False
 
     def remove_missing(self, button):
-        """Purge playlist entries whose files no longer exist."""
-        keep = [p for p in self.playlist
-                if self._is_stream_url(p) or os.path.exists(p)]
+        keep = [(key, path) for key, path in zip(self.entry_ids, self.playlist) if self._playable(path)]
         removed = len(self.playlist) - len(keep)
-        if removed == 0:
-            self.show_drop_feedback("No missing files")
+        if not removed:
+            self.show_drop_feedback('No missing files')
             return
-        current = self.current_song
-        self.playlist = keep
-        with self._store_guard():
-            self.playlist_store.clear()
-            for i, p in enumerate(keep):
-                name = self._display_name(p)
-                display = name if self.is_audio_file(p) else f"⚠ {name} [UNSUPPORTED]"
-                self.playlist_store.append([p, display, i + 1, self._duration_str(p)])
-        self.update_playlist_info()
-        self.save_playlist()
-        if current in self.playlist:
-            self.current_index = self.playlist.index(current)
-            self._select_row(self.current_index)
-        elif current is not None:
-            # The playing track itself was purged
-            self.stop_song(None)
-            self.current_song = None
-            self.current_index = 0
-            self._set_title_text(DEFAULT_SONG_TEXT)
-            self.info_label.set_text("")
-            self._set_album_art(None)
-        self.schedule_save_config()
-        self.show_drop_feedback(f"Removed {removed} missing file(s)")
+        self._remember_playlist()
+        self.entry_ids = [key for key, _ in keep]
+        self.playlist = [path for _, path in keep]
+        self._playlist_edited()
+        self.show_drop_feedback(f'Removed {removed} missing file(s) — Ctrl+Z to undo')
 
     def export_m3u(self, button):
         """Export the playlist as an extended M3U file."""
@@ -4214,79 +4478,41 @@ class MusicPlayer(Gtk.Window):
             self._do_save_playlist_as(self._playlist_name)
 
     def _load_named_playlist(self, name):
-        path = os.path.join(self.playlists_dir(), f"{name}.m3u")
-        entries = self._parse_m3u(path)
+        entries = self._parse_m3u(os.path.join(self.playlists_dir(), f'{name}.m3u'))
         if not entries:
             self.show_drop_feedback(f"Playlist '{name}' is empty/unreadable")
             return
-        self.stop_song(None)
-        self.current_song = None
-        self.current_index = 0
-        self.playlist.clear()
-        self._play_next.clear()
-        with self._store_guard():
-            self.playlist_store.clear()
-        self._add_paths(entries, feedback=f"Loaded '{name}'")
+        self._remember_playlist()
+        self.playlist = entries
+        self.entry_ids = [uuid.uuid4().hex for _ in entries]
+        self.order.queue.clear()
         self._playlist_name = name
-        self.schedule_save_config()
-    
+        self._playlist_edited()
+
     def remove_selected(self, button):
-        """Remove all selected rows. Playback is only touched if the playing
-        track itself is removed; deleting other rows just adjusts bookkeeping."""
-        selection = self.playlist_view.get_selection()
-        model, paths = selection.get_selected_rows()
+        model, paths = self.playlist_view.get_selection().get_selected_rows()
         if not paths:
             return
-        indices = sorted((p.get_indices()[0] for p in paths), reverse=True)
-        removing_current = self.current_index in indices
-        removed_below = sum(1 for i in indices if i < self.current_index)
-        first_removed = indices[-1]
-
-        with self._store_guard():
-            for i in indices:
-                del self.playlist[i]
-                it = model.get_iter(Gtk.TreePath(i))
-                model.remove(it)
-
-        self._renumber_rows()
-        self._update_queue_markers()
-        self.update_playlist_info()
-        self.save_playlist()
-
-        if not self.playlist:
-            self.stop_song(None)
-            self.current_song = None
-            self.current_index = 0
-            self._set_title_text(DEFAULT_SONG_TEXT)
-            self.info_label.set_text("")
-            self._set_album_art(None)
-        elif removing_current:
-            self.stop_song(None)
-            new_index = min(first_removed, len(self.playlist) - 1)
-            self.load_song(new_index)
-        else:
-            # Keep pointing at the same (still-present) track; just fix the index
-            self.current_index -= removed_below
-            self._select_row(self.current_index)
-        self.schedule_save_config()
+        self._remember_playlist()
+        for index in sorted((p.get_indices()[0] for p in paths), reverse=True):
+            del self.playlist[index]
+            del self.entry_ids[index]
+        self._playlist_edited()
+        self.show_drop_feedback('Removed from playlist — Ctrl+Z to undo')
 
     def clear_playlist(self, button):
+        if not self.playlist:
+            return
+        self._remember_playlist()
         self.playlist.clear()
-        self._play_next.clear()
-        with self._store_guard():
-            self.playlist_store.clear()
-        self.stop_song(None)
-        self.current_song = None
-        self.current_index = 0
-        self._set_title_text(DEFAULT_SONG_TEXT)
-        self.info_label.set_text("")
-        self._set_album_art(None)
-        self.update_playlist_info()
-        self.save_playlist()  # Save empty playlist
-    
+        self.entry_ids.clear()
+        self.order.queue.clear()
+        self._playlist_edited()
+        self.show_drop_feedback('Playlist cleared — Ctrl+Z to undo')
+
     def update_playlist_info(self):
         count = len(self.playlist)
-        base = "1 file" if count == 1 else f"{count} files"
+        base = "1 track" if count == 1 else f"{count} tracks"
         known = [self._duration_seconds(p) for p in self.playlist]
         known = [s for s in known if s]
         if count > 0 and len(known) >= max(1, int(count * 0.9)):
@@ -4299,19 +4525,15 @@ class MusicPlayer(Gtk.Window):
         if self._suppress_store or self._reordering:
             return
         self._reordering = True
-        GLib.idle_add(self._resync_playlist_from_store)
+        self.tasks.idle_add(self._resync_playlist_from_store)
 
     def _zebra_bg(self, column, cell, model, it, data):
-        """Zebra-stripe odd playlist rows. Cell data funcs run at draw time by
-        path, so reorder/insert/delete restripe automatically. Selected rows are
-        left alone so the CSS :selected color wins."""
         path = model.get_path(it)
         if self.playlist_view.get_selection().path_is_selected(path):
             cell.set_property('cell-background-set', False)
-        elif path.get_indices()[0] % 2:
-            cell.set_property('cell-background', '#071007')
         else:
-            cell.set_property('cell-background-set', False)
+            cell.set_property('cell-background', self.theme['stripe'] if path.get_indices()[0] % 2 else self.theme['lcd'])
+        cell.set_property('weight', 700 if model.get_value(it, 4) == self.order.current else 400)
 
     def _renumber_rows(self):
         """Rewrite the track-number column (col 2) to match current row order."""
@@ -4323,22 +4545,13 @@ class MusicPlayer(Gtk.Window):
             it = self.playlist_store.iter_next(it)
 
     def _resync_playlist_from_store(self):
-        """Rebuild self.playlist from the store after a drag-reorder, keeping the
-        playing track and renumbering rows, then persist the new order."""
         self._reordering = False
-        new_playlist = []
-        it = self.playlist_store.get_iter_first()
-        while it is not None:
-            new_playlist.append(self.playlist_store.get_value(it, 0))
-            it = self.playlist_store.iter_next(it)
-        self.playlist = new_playlist
-        self._renumber_rows()
-        self._update_queue_markers()
-        if self.current_song in self.playlist:
-            self.current_index = self.playlist.index(self.current_song)
-        self.update_playlist_info()
-        self.save_playlist()
-        self.schedule_save_config()
+        if self._destroyed:
+            return False
+        self._remember_playlist()
+        self.playlist = [row[0] for row in self.playlist_store]
+        self.entry_ids = [row[4] for row in self.playlist_store]
+        self._playlist_edited(rebuild=False)
         return False
 
     def show_jump_dialog(self, *_args):
@@ -4417,25 +4630,26 @@ class MusicPlayer(Gtk.Window):
         entry.grab_focus()
         self._jump_dialog = dialog  # keep referenced while open
 
-    def _search_step(self, restart):
-        """Scroll to the next playlist row matching the search text."""
-        query = self.search_entry.get_text().strip().lower()
-        ctx = self.search_entry.get_style_context()
-        ctx.remove_class('search-miss')
+    def _search_step(self, restart, select=True):
+        query = self.search_entry.get_text().strip().casefold()
+        context = self.search_entry.get_style_context()
+        context.remove_class('search-miss')
+        matches = [i for i, row in enumerate(self.playlist_store) if query in row[1].casefold()] if query else []
         if not query:
+            self.search_count.set_text('')
             return
-        n = len(self.playlist_store)
-        if n == 0:
+        if not matches:
+            self.search_count.set_text('No matches')
+            context.add_class('search-miss')
             return
-        start = 0 if restart else (self._search_pos + 1) % n
-        for off in range(n):
-            i = (start + off) % n
-            row = self.playlist_store[i]
-            if query in row[1].lower():
-                self._search_pos = i
-                self._select_row(i)
-                return
-        ctx.add_class('search-miss')
+        if not select:
+            self.search_count.set_text(f'{matches.index(self._search_pos) + 1}/{len(matches)}'
+                                       if self._search_pos in matches else f'{len(matches)} matches')
+            return
+        index = matches[0] if restart else next((i for i in matches if i > self._search_pos), matches[0])
+        self._search_pos = index
+        self.search_count.set_text(f'{matches.index(index) + 1}/{len(matches)}')
+        self._select_row(index)
 
     def _search_escape(self, entry):
         entry.set_text("")
@@ -4443,17 +4657,30 @@ class MusicPlayer(Gtk.Window):
         self.playlist_view.grab_focus()
 
     def _update_queue_markers(self):
-        """Prefix queued rows with '»' so Play Next targets are visible."""
-        queued = set(self._play_next)
-        it = self.playlist_store.get_iter_first()
-        while it is not None:
-            path = self.playlist_store.get_value(it, 0)
-            display = self.playlist_store.get_value(it, 1)
-            base = display[2:] if display.startswith("» ") else display
-            want = f"» {base}" if path in queued else base
-            if want != display:
-                self.playlist_store.set_value(it, 1, want)
-            it = self.playlist_store.iter_next(it)
+        if not hasattr(self, 'playlist_store'):
+            return
+        queued = {key: i + 1 for i, key in enumerate(self.order.queue)}
+        for row in self.playlist_store:
+            playing = {'Playing': '▶', 'Paused': 'Ⅱ', 'Stopped': ''}[self.playback_state]
+            marker = playing if row[4] == self.order.current and self.current_song else ''
+            if row[4] in queued:
+                marker += f' [{queued[row[4]]}]'
+            row[5] = marker
+
+    def _playlist_tooltip(self, view, x, y, keyboard, tooltip):
+        if keyboard:
+            model, paths = view.get_selection().get_selected_rows()
+            path = paths[0] if paths else None
+        else:
+            x, y = view.convert_widget_to_bin_window_coords(x, y)
+            hit = view.get_path_at_pos(x, y)
+            path = hit[0] if hit else None
+            model = view.get_model()
+        if path is None:
+            return False
+        tooltip.set_text(model[path][0])
+        view.set_tooltip_row(tooltip, path)
+        return True
 
     def on_playlist_button_press(self, view, event):
         """Right-click context menu with queue actions."""
@@ -4468,7 +4695,7 @@ class MusicPlayer(Gtk.Window):
             selection.unselect_all()
             selection.select_path(path)
         model, paths = selection.get_selected_rows()
-        sel_paths = [model.get_value(model.get_iter(p), 0) for p in paths]
+        sel_paths = [model.get_value(model.get_iter(p), 4) for p in paths]
 
         menu = Gtk.Menu()
         play_item = Gtk.MenuItem(label="Play Now")
@@ -4501,47 +4728,40 @@ class MusicPlayer(Gtk.Window):
     def _play_current(self):
         """Set PLAYING and record whether the pipeline is live (NO_PREROLL) —
         live streams must not be paused by the buffering handler."""
+        if not self.current_song:
+            return
+        with self._gapless_lock:
+            self._next_snapshot = None
+        self.order.commit(self.entry_ids[self.current_index])
         ret = self.player.set_state(Gst.State.PLAYING)
         self._pipeline_live = (ret == Gst.StateChangeReturn.NO_PREROLL)
         self._sync_play_ui(True)
+        self._prepare_next()
 
     def _play_index(self, index):
+        if 0 <= index < len(self.entry_ids):
+            self.order.failed.discard(self.entry_ids[index])
         self.load_song(index)
         self._play_current()
 
-    def _queue_paths(self, paths):
-        for p in paths:
-            if p not in self._play_next:
-                self._play_next.append(p)
-        self._update_queue_markers()
-        self.show_drop_feedback(f"Queued {len(paths)} track(s)")
+    def _queue_paths(self, entry_ids):
+        for key in entry_ids:
+            if key in self.entry_ids and key not in self.order.queue:
+                self.order.queue.append(key)
+        self._refresh_order()
+        self.show_drop_feedback(f'Queued {len(entry_ids)} track(s)')
 
-    def _unqueue_paths(self, paths):
-        for p in paths:
-            try:
-                self._play_next.remove(p)
-            except ValueError:
-                pass
-        self._update_queue_markers()
+    def _unqueue_paths(self, entry_ids):
+        self.order.queue = deque(key for key in self.order.queue if key not in entry_ids)
+        self._refresh_order()
 
     def on_playlist_activated(self, treeview, path, column):
         self._play_index(path.get_indices()[0])
 
     def on_playlist_selection_changed(self, selection):
-        """Update the metadata display — only for a single-row selection."""
-        model, paths = selection.get_selected_rows()
-        if len(paths) != 1:
-            return
-        index = paths[0].get_indices()[0]
-        if 0 <= index < len(self.playlist):
-            file_path = self.playlist[index]
-            song_name = self._display_name(file_path)
-            self._set_title_text(f"{song_name}")
+        # Selection belongs to playlist editing; the LCD belongs to playback.
+        return
 
-            # Get audio properties for the selected file
-            self.get_audio_properties(file_path)
-            self.update_audio_display(file_path)
-    
     def on_playlist_key_press(self, widget, event):
         """Handle keyboard events in the playlist"""
         # Check for Delete or Backspace keys
@@ -4632,68 +4852,116 @@ class MusicPlayer(Gtk.Window):
         return f"{sec // 60:01d}:{sec % 60:02d}"
 
     def _start_decay(self):
-        """Arm the bar-decay timer (idempotent). It removes itself at rest, so
-        there is no permanent wakeup while idle."""
-        if getattr(self, '_decay_id', None) is None:
-            self._decay_id = GLib.timeout_add(60, self.animate_equalizer)
+        if self._analyzer_id is None and self._analyzer_visible():
+            self._analyzer_id = self.tasks.timeout_add(33, self.animate_equalizer)
 
     def animate_equalizer(self):
-        """When stopped/paused the spectrum stops posting, so decay the bars to
-        rest — then stop ticking entirely."""
-        if self.is_playing:
-            self._decay_id = None
+        if self._destroyed or not self._analyzer_visible():
+            self._analyzer_id = None
             return False
-        changed = False
-        for i in range(len(self.spectrum_levels)):
-            if self.spectrum_levels[i] > 0.0:
-                self.spectrum_levels[i] = max(0.0, self.spectrum_levels[i] - SPECTRUM_DECAY)
-                changed = True
-        if changed:
-            for bar in self.eq_bars:
-                bar.queue_draw()
-            return True
-        self._decay_id = None
+        speed = {'slow': .5, 'normal': 1, 'fast': 2}[self.config['falloff']]
+        if self.analyzer_state.tick(time.monotonic(), self.is_playing, speed):
+            self.analyzer.queue_draw()
+        alive = any(self.analyzer_state.levels) or any(self.analyzer_state.peaks)
+        if not alive:
+            self._analyzer_id = None
+        return alive
+
+    def _analyzer_visible(self):
+        return (not self._destroyed and hasattr(self, 'analyzer') and self.analyzer.get_mapped()
+                and self.config.get('visualization', True) and not self._windowshade
+                and not getattr(self, '_iconified', False))
+
+    def _update_analyzer_visibility(self):
+        visible = self._analyzer_visible()
+        if self.spectrum:
+            self.spectrum.set_property('post-messages', visible)
+        if not visible:
+            if self._analyzer_id is not None:
+                self.tasks.source_remove(self._analyzer_id)
+                self._analyzer_id = None
+            self.analyzer_state.reset()
+            if hasattr(self, 'analyzer'):
+                self.analyzer.queue_draw()
         return False
-    
+
+    def _draw_analyzer(self, widget, cr):
+        width, height = widget.get_allocated_width(), widget.get_allocated_height()
+        palette = self.config.get('palette') or self.theme['palette']
+        scale = widget.get_scale_factor()
+        key = (width, height, palette, self.theme['lcd'], scale)
+        if getattr(self, '_meter_cache_key', None) != key:
+            # Two tiny cached surfaces replace hundreds of Cairo fills per
+            # frame. Only level clipping and peak positions change with audio.
+            surfaces = []
+            for lit in (False, True):
+                surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width * scale, height * scale)
+                surface.set_device_scale(scale, scale)
+                ctx = cairo.Context(surface)
+                self._cairo_color(ctx, self.theme['lcd'])
+                ctx.paint()
+                for y in range(height - 3, 0, -4):
+                    fraction = (height - y) / height
+                    if palette == 'classic':
+                        color = '#ed644d' if fraction > .82 else '#eee85b' if fraction > .6 else '#65ed48'
+                    else:
+                        color = '#ffba45' if palette == 'amber' else '#52ef34'
+                    self._cairo_color(ctx, color, 1 if lit else .08)
+                    for index in range(DISPLAY_BANDS):
+                        ctx.rectangle(int(index * width / DISPLAY_BANDS) + 1, y,
+                                      max(1, int(width / DISPLAY_BANDS) - 2), 2)
+                    ctx.fill()
+                surfaces.append(surface)
+            self._meter_cache_key, self._meter_surfaces = key, surfaces
+        if not self.config.get('visualization', True):
+            self._cairo_color(cr, self.theme['lcd'])
+            cr.paint()
+            return False
+        background, lit = self._meter_surfaces
+        cr.set_source_surface(background)
+        cr.paint()
+        step = width / DISPLAY_BANDS
+        cr.save()
+        for index, level in enumerate(self.analyzer_state.levels):
+            if level > 0:
+                top = height - int(level * height)
+                cr.rectangle(int(index * step), top, int(step) + 1, height - top)
+        cr.clip()
+        cr.set_source_surface(lit)
+        cr.paint()
+        cr.restore()
+        if self.config.get('peaks', True):
+            self._cairo_color(cr, '#fff2d0' if palette == 'amber' else '#e8ffdc')
+            for index, peak in enumerate(self.analyzer_state.peaks):
+                if peak > 0:
+                    cr.rectangle(int(index * step) + 1, max(0, int((1 - peak) * (height - 2))),
+                                 max(1, int(step) - 2), 2)
+            cr.fill()
+        return False
+
+    def _clock_press(self, widget, event):
+        if event.button == 1 and event.type == Gdk.EventType.BUTTON_PRESS:
+            # GDK sends a second ordinary press before DOUBLE_BUTTON_PRESS.
+            last = getattr(self, '_clock_last_click', None)
+            interval = Gtk.Settings.get_default().get_property('gtk-double-click-time')
+            if last is None or event.time - last > interval:
+                self._toggle_time_mode()
+            self._clock_last_click = event.time
+            return True
+        return False
+
     def get_audio_properties(self, file_path):
-        """Populate audio_properties for file_path. Uses a cached value if present,
-        otherwise shows sensible defaults now and queues an off-thread probe."""
+        self.audio_properties = {'sample_rate': 0, 'bitrate': 0, 'channels': 0}
         if self._is_stream_url(file_path):
-            self.audio_properties = {'sample_rate': 44100, 'bitrate': 128,
-                                     'channels': 2}
-            return  # never enqueue a Discoverer probe for a live stream
+            return
         cached = self._cache_get(self._meta_cache, file_path)
         if isinstance(cached, dict):
-            self.audio_properties = dict(cached)
+            self.audio_properties.update(cached)
             return
-
-        # Immediate extension-based defaults so the UI isn't blank while we probe.
-        file_ext = os.path.splitext(file_path)[1].lower()
-        defaults = {
-            '.flac': {'sample_rate': 44100, 'bitrate': 1000, 'channels': 2},
-            '.wav':  {'sample_rate': 44100, 'bitrate': 1411, 'channels': 2},
-            '.ogg':  {'sample_rate': 44100, 'bitrate': 192, 'channels': 2},
-        }
-        self.audio_properties = dict(defaults.get(file_ext, {'sample_rate': 44100, 'bitrate': 128, 'channels': 2}))
-
-        # cached is False when a previous probe failed: don't probe again
         if cached is False or file_path in self._probe_inflight:
             return
         self._probe_inflight.add(file_path)
-        # Snapshot rides with the job so the worker never reads live main-thread state
         self._probe_queue.put(('meta', file_path, dict(self.audio_properties)))
-
-    def _probe_loop(self):
-        """Single worker draining metadata probes and folder-art scans."""
-        while True:
-            job = self._probe_queue.get()
-            try:
-                if job[0] == 'meta':
-                    self._probe_one(job[1], job[2])
-                elif job[0] == 'folderart':
-                    self._folder_art_scan(job[1])
-            except Exception as e:
-                self.log_debug(f"probe worker error: {e}")
 
     def _probe_one(self, file_path, base_props):
         """Probe one file with GstDiscoverer (worker thread; no GTK calls)."""
@@ -4705,8 +4973,8 @@ class MusicPlayer(Gtk.Window):
             streams = info.get_audio_streams()
             if streams:
                 a = streams[0]
-                props['sample_rate'] = a.get_sample_rate() or 44100
-                props['channels'] = a.get_channels() or 2
+                props['sample_rate'] = a.get_sample_rate() or 0
+                props['channels'] = a.get_channels() or 0
                 br = a.get_bitrate() or 0
                 if br > 0:
                     props['bitrate'] = br // 1000
@@ -4729,20 +4997,42 @@ class MusicPlayer(Gtk.Window):
         except Exception as e:
             self.log_debug(f"discover failed for {os.path.basename(file_path)}: {e}")
         result = {**base_props, **props} if props else False
-        GLib.idle_add(self._probe_done, file_path, result, art_bytes)
+        self.tasks.idle_add(self._probe_done, file_path, result, art_bytes)
+
+    def _update_playlist_title(self, file_path, title):
+        references = self._title_rows.get(file_path)
+        if not references:
+            return
+        self._playlist_titles[file_path] = title.strip() if isinstance(title, str) and title.strip() else None
+        display = self._display_name(file_path)
+        if not self._playable(file_path):
+            display += ' [MISSING]'
+        changed = False
+        for reference in references:
+            path = reference.get_path()
+            if path is not None and self.playlist_store[path][0] == file_path:
+                if self.playlist_store[path][1] != display:
+                    self.playlist_store[path][1] = display
+                    changed = True
+        if changed and self.search_entry.get_text():
+            self._search_step(False, select=False)
 
     def _probe_done(self, file_path, result, art_bytes):
         """Store a probe result on the UI thread; apply if still relevant.
         result is a props dict, or False to negative-cache a failed probe."""
+        if self._destroyed:
+            return False
         self._probe_inflight.discard(file_path)
         self._cache_put(self._meta_cache, file_path, result)
+        title = result.get('title') if isinstance(result, dict) else None
+        self._update_playlist_title(file_path, title)
         if isinstance(result, dict) and result.get('duration'):
             self._note_duration(file_path, result['duration'])
         if art_bytes and self._cache_get(self._art_cache, file_path) is None:
             self._apply_art_bytes(file_path, art_bytes)
         if not isinstance(result, dict):
             return False
-        if file_path != self.current_song and file_path != self._selected_path():
+        if file_path != self.current_song:
             return False
         for k in ('sample_rate', 'bitrate', 'channels'):
             if k in result:
@@ -4752,17 +5042,6 @@ class MusicPlayer(Gtk.Window):
             self._mpris_notify_track()
         self.update_audio_display()
         return False
-
-    def _selected_path(self):
-        try:
-            model, paths = self.playlist_view.get_selection().get_selected_rows()
-            if len(paths) == 1:
-                return model.get_value(model.get_iter(paths[0]), 0)
-        except Exception:
-            pass
-        return None
-    
-    # ---- Album art ----
 
     def _sample_to_bytes(self, sample):
         """Extract raw image bytes from a Gst.Sample (embedded cover art tag)."""
@@ -4826,9 +5105,11 @@ class MusicPlayer(Gtk.Window):
             # so a later attempt can succeed.
             self.log_debug(f"folder art scan failed: {e}")
             return
-        GLib.idle_add(self._folder_art_done, directory, pixbuf)
+        self.tasks.idle_add(self._folder_art_done, directory, pixbuf)
 
     def _folder_art_done(self, directory, pixbuf):
+        if self._destroyed:
+            return False
         """Cache a completed folder scan; show it if still relevant (UI thread)."""
         self._cache_put(self._folder_art_cache, directory, pixbuf,
                         FOLDER_ART_CACHE_LIMIT)
@@ -4842,6 +5123,9 @@ class MusicPlayer(Gtk.Window):
         """Show the best art known right now: embedded (cached) else cached folder
         art. On a folder-cache miss, show nothing and queue an off-thread scan —
         never block the UI on directory I/O (network mounts)."""
+        if not file_path:
+            self._set_album_art(None)
+            return
         if self._is_stream_url(file_path):
             self._set_album_art(None)   # placeholder
             return
@@ -4879,6 +5163,9 @@ class MusicPlayer(Gtk.Window):
         return self._default_art
 
     def _set_album_art(self, pixbuf):
+        if not self.config.get('show_art', True):
+            self.album_art.hide()
+            return
         if pixbuf is None:
             pixbuf = self._get_default_art()
         if pixbuf:
@@ -4898,7 +5185,7 @@ class MusicPlayer(Gtk.Window):
         channels = self.audio_properties['channels']
         
         # Convert sample rate to kHz
-        sample_rate_khz = sample_rate // 1000
+        sample_rate_khz = f'{sample_rate / 1000:g}' if sample_rate else '—'
         
         # Get dynamic file type from current song or provided file path
         file_type = "AUDIO"  # Default fallback
@@ -4925,8 +5212,8 @@ class MusicPlayer(Gtk.Window):
                 file_type = file_ext[1:].upper() if file_ext else "AUDIO"
         
         # Update info label with shuffle/repeat status
-        channel_text = "Mono" if channels == 1 else "Stereo"
-        status_parts = [f"{file_type} • {sample_rate_khz}kHz • {bitrate}kbps • {channel_text}"]
+        channel_text = {0: '—', 1: 'Mono', 2: 'Stereo'}.get(channels, f'{channels} channels')
+        status_parts = [f"{file_type} · {sample_rate_khz} kHz · {bitrate or '—'} kbps · {channel_text}"]
         
         if self.shuffle == SHUFFLE_ALBUMS:
             status_parts.append("ALBUMS")
@@ -4964,13 +5251,15 @@ class MusicPlayer(Gtk.Window):
                 self.playlist_view.set_model(None)  # bulk-insert speedup
                 for i, file_path in enumerate(lines):
                     self.playlist.append(file_path)
+                    self.entry_ids.append(uuid.uuid4().hex)
                     display_name = self._display_name(file_path)
-                    self.playlist_store.append([file_path, display_name, i + 1, self._duration_str(file_path)])
+                    self.playlist_store.append([file_path, display_name, i + 1, self._duration_str(file_path), self.entry_ids[-1], ""])
                 self.playlist_view.set_model(self.playlist_store)
 
+            self._refresh_order()
             self.update_playlist_info()
-            GLib.idle_add(self._check_missing_chunk, 0)
-            self._queue_missing_durations()
+            self.tasks.idle_add(self._check_missing_chunk, 0)
+            self._queue_playlist_metadata()
 
             # If we have a playlist, try to load the first available song
             if self.playlist and self.current_song is None:
@@ -4995,7 +5284,7 @@ class MusicPlayer(Gtk.Window):
             elif not self.is_audio_file(p):
                 self.playlist_store.set_value(it, 1, f"⚠ {name} [UNSUPPORTED]")
         if end < len(self.playlist):
-            GLib.idle_add(self._check_missing_chunk, end)
+            self.tasks.idle_add(self._check_missing_chunk, end)
         return False
     
     def load_first_available_song(self):

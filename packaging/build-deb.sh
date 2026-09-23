@@ -92,9 +92,9 @@ Depends: python3, python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, gir1.2-gstreamer
 Recommends: gstreamer1.0-plugins-bad, gstreamer1.0-libav
 Maintainer: Jeremy Person <1409499+jeremyperson@users.noreply.github.com>
 Description: Winamp-inspired music player
- Retro-styled GTK3 music player with a modern flat theme: 10-band EQ with
- spectrum display, album art, playlists (M3U import/export), MPRIS2 media
- keys, and bit-perfect direct ALSA output.
+ Compact GTK3 music player with three retro themes, a 10-band equalizer,
+ falling-peak spectrum display, detachable panels, windowshade mode,
+ playlist undo, MPRIS2 media keys, and direct ALSA output.
 EOF
 
 # Refresh caches after install/remove
