@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Oscilloscope visualization. Click the analyzer to cycle spectrum,
+  oscilloscope and off, or pick the mode in Settings → Visualization. The
+  trace reads the audio without modifying it, so Direct Mode stays bit-exact;
+  the Green / yellow / red colors shade it by amplitude.
 - Fixed: a short track followed by a duplicate of itself could jump the
   playlist ahead one entry when playback started.
 - Fixed: a config.json with the wrong number of equalizer values prevented

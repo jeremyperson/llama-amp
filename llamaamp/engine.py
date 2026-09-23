@@ -5,6 +5,7 @@ import time
 
 from gi.repository import GLib, Gst
 
+from .analyzer import decode_pcm
 from .constants import (
     EQ_GAIN_MAX,
     EQ_GAIN_MIN,
@@ -13,6 +14,7 @@ from .constants import (
     REPEAT_OFF,
     REPEAT_ONE,
     RG_MODES,
+    SCOPE_INTERVAL_S,
     SHUFFLE_OFF,
     SPECTRUM_BANDS,
     SPECTRUM_INTERVAL_NS,
@@ -95,9 +97,37 @@ class EngineMixin:
                 self.equalizer = self.panorama = self.spectrum = self.preamp = None
                 return None
 
+        # Read-only tap for the oscilloscope: never modifies samples, so Direct
+        # Mode stays bit-exact.
+        self.spectrum.get_static_pad("src").add_probe(Gst.PadProbeType.BUFFER, self._scope_probe)
         bin_.add_pad(Gst.GhostPad.new("sink", conv_in.get_static_pad("sink")))
         bin_.add_pad(Gst.GhostPad.new("src", chain[-1].get_static_pad("src")))
         return bin_
+
+    def _scope_probe(self, pad, info):
+        # Streaming thread: decode at most every SCOPE_INTERVAL_S, only while shown
+        now = time.monotonic()
+        if not self._scope_active or now - self._scope_last < SCOPE_INTERVAL_S:
+            return Gst.PadProbeReturn.OK
+        caps, buffer = pad.get_current_caps(), info.get_buffer()
+        if caps is None or buffer is None or not caps.get_size():
+            return Gst.PadProbeReturn.OK
+        structure = caps.get_structure(0)
+        ok, channels = structure.get_int('channels')
+        if structure.get_string('layout') != 'interleaved' or not ok or channels < 1:
+            return Gst.PadProbeReturn.OK
+        ok, mapped = buffer.map(Gst.MapFlags.READ)
+        if not ok:
+            return Gst.PadProbeReturn.OK
+        try:
+            data = mapped.data
+        finally:
+            buffer.unmap(mapped)
+        decoded = decode_pcm(data, structure.get_string('format'))
+        if decoded is not None:
+            self.scope_state.feed_samples(decoded[0], channels, decoded[1], now)
+        self._scope_last = now
+        return Gst.PadProbeReturn.OK
 
     def _attach_filter(self):
         """Attach the filter bin matching the current direct_mode (NULL state only)."""
@@ -415,6 +445,9 @@ class EngineMixin:
 
     def on_spectrum_message(self, structure):
         if not self._analyzer_visible():
+            return
+        if self.config['vis_mode'] == 'scope':
+            self._start_decay()
             return
         mags = self._parse_magnitudes(structure)
         if not mags:

@@ -351,6 +351,32 @@ class PlayerTests(unittest.TestCase):
         self.assertNotEqual(old[3], a._next_generation)
         self.assertEqual(a.order.current, a.entry_ids[0])
 
+    def test_visualization_click_cycles_spectrum_scope_off(self):
+        a = self.app
+        seen = []
+        for _ in range(3):
+            a._cycle_visualization()
+            seen.append((a.config['visualization'], a.config['vis_mode']))
+        self.assertEqual(seen, [(True, 'scope'), (False, 'scope'), (True, 'spectrum')])
+        a._cycle_visualization()
+        a._write_config()
+        self.assertEqual(json.loads(Path(a.config_path()).read_text())['vis_mode'], 'scope')
+
+    def test_oscilloscope_traces_audio_with_and_without_dsp(self):
+        a = self.app
+        a._set_appearance('vis_mode', 'scope')
+        a._add_paths(self.files)
+        a._play_index(0)
+        self.wait_for(lambda: a.scope_state.points)
+        # The fixture is a constant positive sample: a flat trace above center
+        self.assertTrue(all(0 < p < .2 for p in a.scope_state.points), a.scope_state.points)
+        a.toggle_direct_mode()
+        a.scope_state.reset()
+        self.wait_for(lambda: a.scope_state.points)
+        self.assertTrue(all(0 < p < .2 for p in a.scope_state.points))
+        a.stop_song(None)
+        self.wait_for(lambda: not a.scope_state.points)
+
     def test_corrupt_config_values_fall_back_to_defaults(self):
         a = self.app
         a.destroy()

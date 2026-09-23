@@ -13,6 +13,9 @@ class MenusMixin:
             self.setup_styling()
         if key == 'show_art':
             self._update_album_art(self.current_song)
+        if key in ('vis_mode', 'visualization'):
+            self.analyzer_state.reset()
+            self.scope_state.reset()
         self.analyzer.queue_draw()
         self._update_analyzer_visibility()
         self.schedule_save_config()
@@ -31,11 +34,13 @@ class MenusMixin:
     def _appearance_menus(self, menu):
         self._choice_menu(menu, 'Theme', 'theme', [(key, value['name']) for key, value in THEMES.items()])
         visualization, sub = Gtk.MenuItem(label='Visualization'), Gtk.Menu()
-        for key, caption in [('visualization', 'Spectrum enabled'), ('peaks', 'Falling peak caps')]:
+        for key, caption in [('visualization', 'Show visualization'), ('peaks', 'Falling peak caps')]:
             item = Gtk.CheckMenuItem(label=caption)
             item.set_active(self.config[key])
             item.connect('toggled', lambda w, k=key: self._set_appearance(k, w.get_active()))
             sub.append(item)
+        self._choice_menu(sub, 'Mode', 'vis_mode', [('spectrum', 'Spectrum analyzer'),
+                                                    ('scope', 'Oscilloscope')])
         self._choice_menu(sub, 'Colors', 'palette', [(None, 'Follow theme'), ('green', 'Green'),
                                                      ('classic', 'Green / yellow / red'), ('amber', 'Amber')])
         self._choice_menu(sub, 'Falloff', 'falloff', [('slow', 'Slow'), ('normal', 'Normal'), ('fast', 'Fast')])

@@ -5,7 +5,9 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from llamaamp.analyzer import AnalyzerState
+import struct
+
+from llamaamp.analyzer import AnalyzerState, ScopeState, decode_pcm
 from llamaamp.order import PlaybackOrder
 from llamaamp.settings import SCHEMA, SettingsStore, dump_settings, load_settings
 from llamaamp.constants import (SHUFFLE_OFF, SHUFFLE_TRACKS, SHUFFLE_ALBUMS,
@@ -154,6 +156,41 @@ class SchemaTests(unittest.TestCase):
         data = dump_settings(cfg)
         self.assertEqual(data['window_pos'], [3, 4])
         self.assertEqual(dump_settings(load_settings(data)), data)
+
+
+
+class ScopeTests(unittest.TestCase):
+    def test_decodes_common_little_endian_formats(self):
+        samples, full_scale = decode_pcm(struct.pack('<3h', 1, -2, 3), 'S16LE')
+        self.assertEqual(list(samples), [1, -2, 3])
+        self.assertEqual(full_scale, 32768.0)
+        samples, full_scale = decode_pcm(struct.pack('<2f', .5, -.25) + b'\0', 'F32LE')
+        self.assertEqual(list(samples), [.5, -.25])
+        self.assertEqual(full_scale, 1.0)
+        self.assertIsNone(decode_pcm(b'\0' * 6, 'S24LE'))
+
+    def test_downmixes_and_decimates_to_fixed_points(self):
+        scope = ScopeState()
+        stereo = [16384, -16384] * 50 + [32767, 32767] * 50   # silence, then full scale
+        scope.feed_samples(stereo, 2, 32768.0, now=1.0)
+        self.assertEqual(len(scope.points), 76)
+        self.assertEqual(scope.points[0], 0.0)
+        self.assertAlmostEqual(scope.points[-1], 1.0, places=3)
+        mono = [8192] * 10
+        scope.feed_samples(mono, 1, 32768.0, now=1.0)
+        self.assertEqual(scope.points, (.25,) * 10)
+
+    def test_trace_clears_once_audio_stops(self):
+        scope = ScopeState()
+        scope.feed_samples([100] * 200, 1, 32768.0, now=1.0)
+        self.assertTrue(scope.tick(1.1, playing=True))
+        self.assertTrue(scope.points)
+        self.assertTrue(scope.tick(1.5, playing=True))    # no input for .25 s
+        self.assertEqual(scope.points, ())
+        self.assertFalse(scope.tick(1.6, playing=True))
+        scope.feed_samples([100] * 200, 1, 32768.0, now=2.0)
+        scope.tick(2.0, playing=False)
+        self.assertEqual(scope.points, ())
 
 
 if __name__ == '__main__':

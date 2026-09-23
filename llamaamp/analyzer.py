@@ -1,9 +1,29 @@
-"""Spectrum analyzer: band mapping, meter ballistics and LED drawing."""
+"""Visualizations: spectrum band mapping and ballistics, the oscilloscope trace,
+and their LED drawing."""
 import math
+import struct
+import sys
 import time
 import cairo
 
-from .constants import DISPLAY_BANDS, SPECTRUM_THRESHOLD
+from gi.repository import Gdk
+
+from .constants import DISPLAY_BANDS, SCOPE_POINTS, SPECTRUM_THRESHOLD
+
+# Interleaved PCM formats the oscilloscope reads: memoryview code, full scale.
+# S24LE (packed 3-byte) and big-endian hosts show a flat trace.
+_PCM_FORMATS = {'S16LE': ('h', 32768.0), 'S24_32LE': ('i', 8388608.0),
+                'S32LE': ('i', 2147483648.0), 'F32LE': ('f', 1.0), 'F64LE': ('d', 1.0)}
+
+
+def decode_pcm(data, fmt):
+    """(samples, full_scale) for raw interleaved audio, or None if unsupported."""
+    spec = _PCM_FORMATS.get(fmt)
+    if spec is None or sys.byteorder != 'little':
+        return None
+    code, full_scale = spec
+    size = struct.calcsize(code)
+    return memoryview(data)[:len(data) - len(data) % size].cast(code), full_scale
 
 
 class AnalyzerState:
@@ -66,6 +86,37 @@ class AnalyzerState:
         return changed
 
 
+class ScopeState:
+    """Latest decimated mono waveform in -1..1. The streaming thread replaces
+    `points` with a new tuple; the main loop only reads it."""
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.points = ()
+        self.last_input = None
+
+    def feed_samples(self, samples, channels, full_scale, now):
+        frames = len(samples) // channels
+        if frames <= 0:
+            return
+        count = min(SCOPE_POINTS, frames)
+        points = []
+        for i in range(count):
+            base = (i * frames // count) * channels
+            value = sum(samples[base:base + channels]) / (channels * full_scale)
+            points.append(max(-1.0, min(1.0, value)))
+        self.points = tuple(points)
+        self.last_input = now
+
+    def tick(self, now, playing):
+        """True when the trace needs a redraw; clears it once audio stops."""
+        if not self.points:
+            return False
+        if not (playing and self.last_input is not None and now - self.last_input < .25):
+            self.points = ()
+        return True
+
 
 class AnalyzerViewMixin:
     def _start_decay(self):
@@ -76,10 +127,15 @@ class AnalyzerViewMixin:
         if self._destroyed or not self._analyzer_visible():
             self._analyzer_id = None
             return False
-        speed = {'slow': .5, 'normal': 1, 'fast': 2}[self.config['falloff']]
-        if self.analyzer_state.tick(time.monotonic(), self.is_playing, speed):
-            self.analyzer.queue_draw()
-        alive = any(self.analyzer_state.levels) or any(self.analyzer_state.peaks)
+        if self.config['vis_mode'] == 'scope':
+            if self.scope_state.tick(time.monotonic(), self.is_playing):
+                self.analyzer.queue_draw()
+            alive = bool(self.scope_state.points)
+        else:
+            speed = {'slow': .5, 'normal': 1, 'fast': 2}[self.config['falloff']]
+            if self.analyzer_state.tick(time.monotonic(), self.is_playing, speed):
+                self.analyzer.queue_draw()
+            alive = any(self.analyzer_state.levels) or any(self.analyzer_state.peaks)
         if not alive:
             self._analyzer_id = None
         return alive
@@ -91,13 +147,16 @@ class AnalyzerViewMixin:
 
     def _update_analyzer_visibility(self):
         visible = self._analyzer_visible()
+        # Spectrum messages also drive the oscilloscope's animation while audio flows
         if self.spectrum:
             self.spectrum.set_property('post-messages', visible)
+        self._scope_active = visible and self.config['vis_mode'] == 'scope'
         if not visible:
             if self._analyzer_id is not None:
                 self.tasks.source_remove(self._analyzer_id)
                 self._analyzer_id = None
             self.analyzer_state.reset()
+            self.scope_state.reset()
             if hasattr(self, 'analyzer'):
                 self.analyzer.queue_draw()
         return False
@@ -137,6 +196,9 @@ class AnalyzerViewMixin:
         background, lit = self._meter_surfaces
         cr.set_source_surface(background)
         cr.paint()
+        if self.config['vis_mode'] == 'scope':
+            self._draw_scope(cr, width, height, palette)
+            return False
         step = width / DISPLAY_BANDS
         cr.save()
         for index, level in enumerate(self.analyzer_state.levels):
@@ -156,3 +218,42 @@ class AnalyzerViewMixin:
             cr.fill()
         return False
 
+    def _draw_scope(self, cr, width, height, palette):
+        points = self.scope_state.points
+        if not points:
+            return
+        middle = (height - 1) / 2
+        step = width / len(points)
+        cr.set_line_width(2)
+        cr.set_line_cap(cairo.LINE_CAP_ROUND)
+        previous = None
+        for index, value in enumerate(points):
+            x, y = index * step + step / 2, middle - value * (middle - 2)
+            if palette == 'classic':
+                # Winamp colors the trace by amplitude: green near center, red at the peaks
+                magnitude = abs(value)
+                color = '#ed644d' if magnitude > .7 else '#eee85b' if magnitude > .35 else '#65ed48'
+            else:
+                color = '#ffba45' if palette == 'amber' else '#52ef34'
+            self._cairo_color(cr, color)
+            if previous is None:
+                cr.move_to(x, y)
+                cr.line_to(x, y)
+            else:
+                cr.move_to(*previous)
+                cr.line_to(x, y)
+            cr.stroke()
+            previous = (x, y)
+
+    def _cycle_visualization(self, _widget=None, event=None):
+        """Click cycles spectrum -> oscilloscope -> off, like Winamp's vis area."""
+        if event is not None and (event.button != 1 or event.type != Gdk.EventType.BUTTON_PRESS):
+            return False
+        if not self.config['visualization']:
+            self.config['vis_mode'] = 'spectrum'
+            self._set_appearance('visualization', True)
+        elif self.config['vis_mode'] == 'spectrum':
+            self._set_appearance('vis_mode', 'scope')
+        else:
+            self._set_appearance('visualization', False)
+        return True

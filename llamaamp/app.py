@@ -7,7 +7,7 @@ from collections import OrderedDict, deque
 
 from gi.repository import GLib, Gdk, Gst, Gtk
 
-from .analyzer import AnalyzerState, AnalyzerViewMixin
+from .analyzer import AnalyzerState, AnalyzerViewMixin, ScopeState
 from .config import ConfigMixin
 from .constants import (
     APP_NAME,
@@ -86,6 +86,9 @@ class MusicPlayer(EngineMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisM
 
         # Live analyzer levels (drive the EQ bar heights; separate from eq gains)
         self.analyzer_state = AnalyzerState()
+        self.scope_state = ScopeState()
+        self._scope_active = False      # read by the streaming-thread probe
+        self._scope_last = 0.0
         self._analyzer_id = None
 
         # Title-bar drag state (initialised so motion before press can't AttributeError)

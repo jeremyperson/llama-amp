@@ -24,8 +24,9 @@ and Balance groups and a larger now-playing title.
   Detached panels snap within 12 pixels on X11. Drag the player to move panels
   joined beneath it; hold Alt to separate them. Wayland uses explicit attachment
   and independent windows. **Settings → View → Reset layout** restores the stack.
+- **Click the analyzer** to cycle spectrum, oscilloscope and off.
 - **Settings → Theme** switches between Llama Green, Classic Silver and Amber.
-  **Visualization** controls peak caps, colors and falloff speed.
+  **Visualization** controls the mode, peak caps, colors and falloff speed.
 - Drag the visible grip in the lower-right corner to resize. The playlist grows
   with the window; detached panels have the same grip.
 - **Add ▾** contains files, folders and stream URLs. **Playlist ▾** contains
