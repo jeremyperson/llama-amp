@@ -100,6 +100,7 @@ class Skin:
         self.viscolors = viscolors
         self.pledit = pledit
         self.regions = regions or {}
+        self.missing, self.undecodable = [], []     # sheets taken from the fallback
         self._surfaces = {sheet: Gdk.cairo_surface_create_from_pixbuf(pixbuf, 1, None)
                           for sheet, pixbuf in sheets.items()}
         self.sheets = sheets
@@ -113,20 +114,25 @@ class Skin:
             stem, ext = os.path.splitext(os.path.basename(member).lower())
             by_stem.setdefault(stem + ext, data)
         sheets = dict(fallback.sheets)
+        missing, undecodable = [], []
         for sheet, stem in SHEET_FILES.items():
             data = by_stem.get(stem + '.bmp') or by_stem.get(stem + '.png')
             pixbuf = _decode(data) if data else None
             if pixbuf is not None:
                 sheets[sheet] = pixbuf
+            else:
+                (undecodable if data else missing).append(sheet)
         if 'nums_ex.bmp' not in by_stem and 'numbers.bmp' in by_stem:
             sheets.pop('NUMS_EX', None)     # the skin's own digits beat the fallback's
         viscolor = by_stem.get('viscolor.txt')
         viscolors = parse_viscolor(viscolor.decode('latin-1'), fallback.viscolors) if viscolor else fallback.viscolors
         pledit = by_stem.get('pledit.txt')
         region = by_stem.get('region.txt')
-        return cls(os.path.splitext(os.path.basename(path.rstrip('/')))[0], sheets, viscolors,
+        skin = cls(os.path.splitext(os.path.basename(path.rstrip('/')))[0], sheets, viscolors,
                    parse_pledit(pledit.decode('latin-1')) if pledit else dict(fallback.pledit),
                    parse_region(region.decode('latin-1')) if region else {})
+        skin.missing, skin.undecodable = missing, undecodable
+        return skin
 
     def has(self, sheet):
         return sheet in self._surfaces

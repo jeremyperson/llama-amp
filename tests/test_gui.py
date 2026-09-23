@@ -954,6 +954,18 @@ class SkinTests(unittest.TestCase):
         self.assertEqual(skin.viscolors[0], (1, 2, 3))
         self.assertEqual(skin.viscolors[1:], default.viscolors[1:])
         self.assertEqual(skin.pledit['font'], 'Tahoma')
+        self.assertIn('EQMAIN', skin.missing)
+        self.assertEqual(skin.undecodable, [])
+
+    def test_corrupt_sheets_fall_back_and_are_reported(self):
+        default = build_default_skin()
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory, 'broken.wsz'))
+            with zipfile.ZipFile(path, 'w') as archive:
+                archive.writestr('main.bmp', b'BM not really a bitmap')
+            skin = Skin.load(path, default)
+        self.assertEqual(skin.undecodable, ['MAIN'])
+        self.assertIs(skin.sheets['MAIN'], default.sheets['MAIN'])
 
 
 if __name__ == '__main__':
