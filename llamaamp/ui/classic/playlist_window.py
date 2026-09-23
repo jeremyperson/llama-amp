@@ -3,7 +3,7 @@ track list. Rows, selection and the queue are the modern playlist's own model,
 so every playlist action behaves the same in both modes."""
 from gi.repository import Gdk, Gtk, Pango, PangoCairo
 
-from ...playlist import SORT_KEYS
+from ...playlist import SORT_KEYS, move_block
 from .base import SkinnedWindow
 
 TOP, BOTTOM, LEFT, RIGHT = 20, 38, 12, 20
@@ -26,6 +26,7 @@ class ClassicPlaylistWindow(SkinnedWindow):
         self.scroll_row = 0
         self.anchor = None             # shift-click range anchor
         self.resizing = None           # (pointer x, y, width, height) at press
+        self.row_drag = None           # {'start', 'offset', 'collapse_to'} while dragging rows
         self.area.add_events(Gdk.EventMask.BUTTON_MOTION_MASK)
 
     def skin_size(self):
@@ -96,18 +97,59 @@ class ClassicPlaylistWindow(SkinnedWindow):
         if event.button != 1 or index is None:
             return True
         if event.type == Gdk.EventType._2BUTTON_PRESS:
+            self.row_drag = None
             app._play_index(index)
-        elif event.state & Gdk.ModifierType.SHIFT_MASK and self.anchor is not None:
+            self.refresh()
+            return True
+        collapse_to = None
+        if event.state & Gdk.ModifierType.SHIFT_MASK and self.anchor is not None:
             selection.unselect_all()
             selection.select_range(Gtk.TreePath(min(self.anchor, index)), Gtk.TreePath(max(self.anchor, index)))
         elif event.state & Gdk.ModifierType.CONTROL_MASK:
             path = Gtk.TreePath(index)
             (selection.unselect_path if selection.path_is_selected(path) else selection.select_path)(path)
             self.anchor = index
+        elif selection.path_is_selected(Gtk.TreePath(index)):
+            collapse_to = index          # keep the block for a drag; a plain click selects just this row
+            self.anchor = index
         else:
             selection.unselect_all()
             selection.select_path(Gtk.TreePath(index))
             self.anchor = index
+        # Dragging a selected row moves the selection as a block (Winamp)
+        self.row_drag = {'start': index, 'offset': 0, 'collapse_to': collapse_to}
+        self.refresh()
+        return True
+
+    def _selected_indices(self):
+        _model, paths = self.app.playlist_view.get_selection().get_selected_rows()
+        return [path.get_indices()[0] for path in paths]
+
+    def _motion(self, widget, event):
+        if self.row_drag is not None:
+            _x, y = self._point(event)
+            row = self.scroll_row + int((y - TOP - 2) // ROW_HEIGHT)
+            offset = row - self.row_drag['start']
+            if offset != self.row_drag['offset']:
+                self.row_drag['offset'] = offset
+                self.refresh()
+            return False
+        return super()._motion(widget, event)
+
+    def _release(self, widget, event):
+        if self.row_drag is None or event.button != 1:
+            return super()._release(widget, event)
+        drag, self.row_drag = self.row_drag, None
+        selection = self.app.playlist_view.get_selection()
+        if drag['offset']:
+            targets = self.app.move_entries(self._selected_indices(), drag['offset'])
+            selection.unselect_all()
+            for index in targets:
+                selection.select_path(Gtk.TreePath(index))
+            self.anchor = targets[0] if targets else None
+        elif drag['collapse_to'] is not None:
+            selection.unselect_all()
+            selection.select_path(Gtk.TreePath(drag['collapse_to']))
         self.refresh()
         return True
 
@@ -239,6 +281,14 @@ class ClassicPlaylistWindow(SkinnedWindow):
             cr.move_to(x + 2, top)
             PangoCairo.show_layout(cr, layout)
             layout.set_width(-1)
+        if self.row_drag is not None and self.row_drag['offset']:
+            # Outline where the dragged rows will land
+            _order, targets = move_block(rows, self._selected_indices(), self.row_drag['offset'])
+            cr.set_source_rgb(*(c / 255 for c in colors['current']))
+            cr.set_line_width(1)
+            for index in targets:
+                cr.rectangle(x + .5, y + 2 + (index - self.scroll_row) * ROW_HEIGHT + .5, width - 1, ROW_HEIGHT - 1)
+            cr.stroke()
         cr.restore()
 
     def _running_time(self):

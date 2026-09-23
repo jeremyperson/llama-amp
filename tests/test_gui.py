@@ -692,6 +692,28 @@ class PlayerTests(unittest.TestCase):
         self.assertEqual(a.current_index, 0)
         self.assertTrue(a.is_playing)
 
+    def test_classic_playlist_drag_moves_the_selection_as_one_undo_step(self):
+        a = self.app
+        a._add_paths(self.files)
+        keys = list(a.entry_ids)
+        a.set_skin('builtin')
+        playlist = a._classic.playlist
+        row_y = lambda index: 20 + 2 + 13 * index + 5
+        playlist._press(playlist.area, self.click_event(30, row_y(0)))
+        playlist._press(playlist.area, self.click_event(30, row_y(1), state=Gdk.ModifierType.SHIFT_MASK))
+        motion = Gdk.EventMotion()
+        motion.x, motion.y = 30, row_y(2)
+        playlist._motion(playlist.area, motion)
+        self.assertEqual(a.entry_ids, keys)                   # nothing moves until release
+        release = self.click_event(30, row_y(2))
+        release.type = Gdk.EventType.BUTTON_RELEASE
+        playlist._release(playlist.area, release)
+        self.assertEqual(a.entry_ids, [keys[2], keys[0], keys[1]])
+        model, paths = a.playlist_view.get_selection().get_selected_rows()
+        self.assertEqual([p.get_indices()[0] for p in paths], [1, 2])
+        a.undo_playlist()
+        self.assertEqual(a.entry_ids, keys)
+
     def test_classic_windows_paint_every_state(self):
         a = self.app
         a._add_paths(self.files)

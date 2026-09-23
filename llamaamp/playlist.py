@@ -64,6 +64,21 @@ def sort_entries(entries, key, info, rng=random):
     return sorted(entries, key=sort_key)
 
 
+def move_block(entries, indices, offset):
+    """Shift the entries at indices by offset, keeping their order; the others
+    fill the remaining slots in order. The offset is clamped so the block stays
+    in range. Returns (new order, new indices of the moved entries)."""
+    indices = sorted(set(indices))
+    if not indices:
+        return list(entries), []
+    offset = max(-indices[0], min(len(entries) - 1 - indices[-1], offset))
+    targets = [index + offset for index in indices]
+    moving = set(indices)
+    rest = iter(entry for index, entry in enumerate(entries) if index not in moving)
+    placed = dict(zip(targets, (entries[index] for index in indices)))
+    return [placed[slot] if slot in placed else next(rest) for slot in range(len(entries))], targets
+
+
 class PlaylistMixin:
     @contextmanager
     def _store_guard(self):
@@ -582,3 +597,15 @@ class PlaylistMixin:
         self.playlist = [path for _, path in ordered]
         self._playlist_edited(rebuild=True)
         self.show_drop_feedback(f"{SORT_KEYS[key]} — Ctrl+Z to undo")
+
+    def move_entries(self, indices, offset):
+        """Move the given rows by offset as one undoable edit; returns their new
+        indices."""
+        order, targets = move_block(list(zip(self.entry_ids, self.playlist)), indices, offset)
+        if targets == sorted(set(indices)):
+            return targets
+        self._remember_playlist()
+        self.entry_ids = [entry_id for entry_id, _ in order]
+        self.playlist = [path for _, path in order]
+        self._playlist_edited(rebuild=True)
+        return targets

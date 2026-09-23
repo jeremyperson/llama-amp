@@ -11,7 +11,7 @@ import struct
 from llamaamp.analyzer import AnalyzerState, ScopeState, decode_pcm
 from llamaamp.crossfade import crossfade_gains
 from llamaamp.order import PlaybackOrder
-from llamaamp.playlist import SORT_KEYS, sort_entries
+from llamaamp.playlist import SORT_KEYS, move_block, sort_entries
 from llamaamp.ui.menus import parse_clock
 from llamaamp.settings import SCHEMA, SettingsStore, dump_settings, load_settings
 from llamaamp.constants import (SHUFFLE_OFF, SHUFFLE_TRACKS, SHUFFLE_ALBUMS,
@@ -257,6 +257,24 @@ class CrossfadeGainTests(unittest.TestCase):
         self.assertAlmostEqual(out ** 2 + into ** 2, 1.0)
         self.assertEqual(crossfade_gains(1), (0.0, 1.0))
         self.assertEqual(crossfade_gains(7), (0.0, 1.0))
+
+
+
+class MoveBlockTests(unittest.TestCase):
+    ENTRIES = list('abcdef')
+
+    def test_selected_rows_shift_together_keeping_their_order(self):
+        order, targets = move_block(self.ENTRIES, [1, 3], 2)
+        self.assertEqual(order, list('acebfd'))
+        self.assertEqual(targets, [3, 5])
+
+    def test_offsets_are_clamped_at_the_ends(self):
+        order, targets = move_block(self.ENTRIES, [4, 5], 9)
+        self.assertEqual(order, self.ENTRIES)
+        self.assertEqual(targets, [4, 5])
+        order, targets = move_block(self.ENTRIES, [2, 3], -5)
+        self.assertEqual(order, list('cdabef'))
+        self.assertEqual(targets, [0, 1])
 
 
 if __name__ == '__main__':

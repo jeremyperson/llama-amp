@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Drag selected rows up or down in the classic playlist editor to move them
+  as a block (one Ctrl+Z undo step), as in Winamp.
+
 ## 1.6 — 2026-09-22
 
 - Classic mode with real Winamp 2 skins (Settings → Skin): the main window,
