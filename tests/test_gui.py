@@ -902,16 +902,20 @@ class PlayerTests(unittest.TestCase):
         a.show_library()
         window = a._library_window
         self.assertEqual(window.stack.get_visible_child_name(), 'empty')
+        # A distinctive name: search matches word prefixes anywhere in the path,
+        # including the random temporary folder name
+        anthem = str(Path(self.directory.name, 'Llama Anthem.wav'))
+        shutil.copyfile(self.files[1], anthem)
         a.library.add_folder(self.directory.name)
         Scanner(a.library, a.library.folders()).run()
         window.refresh()
         self.assertEqual(window.stack.get_visible_child_name(), 'browser')
-        self.assertEqual(len(window.tracks), 3)
+        self.assertEqual(len(window.tracks), 4)
         genres = [row[0] for row in window.facet_views['genre'].get_model()]
-        self.assertEqual(genres, ['All (3)', '(Unknown) (3)'])
-        window.search.set_text('1')
+        self.assertEqual(genres, ['All (4)', '(Unknown) (4)'])
+        window.search.set_text('anthem')
         self.wait_for(lambda: len(window.tracks) == 1)
-        self.assertTrue(window.tracks[0][0].endswith('1.wav'))
+        self.assertEqual(window.chosen_paths(), [anthem])
 
     def test_library_play_enqueue_and_play_next(self):
         a, window = self.library_with_fixtures()
