@@ -19,6 +19,8 @@ from unittest.mock import patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # golden_scenes, run either way
+from golden_scenes import GOLDEN_DIR, SCENES, difference, render
 from llamaamp.app import MusicPlayer
 from llamaamp.constants import REPEAT_ALL, REPEAT_ONE, SHUFFLE_TRACKS
 from llamaamp.fileinfo import read_file_info
@@ -733,6 +735,15 @@ class PlayerTests(unittest.TestCase):
         self.assertIn('Green Dimension.wsz', a.installed_skins())
         self.assertEqual(a.skin.name, 'Green Dimension')
         self.assertIsNotNone(a._classic)
+
+    def test_classic_scenes_match_golden_images(self):
+        # Regenerate with tools/update_golden.py after an intended change
+        a = self.app
+        a.set_skin('builtin')
+        for scene in SCENES:
+            with self.subTest(scene=scene):
+                changed = difference(render(a, scene), GOLDEN_DIR / f'{scene}.png')
+                self.assertLessEqual(changed, .001, f'{scene}: {changed:.2%} of pixels changed')
 
     def test_corrupt_config_values_fall_back_to_defaults(self):
         a = self.app

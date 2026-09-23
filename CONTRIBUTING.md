@@ -44,6 +44,10 @@ edit, relaunch, done.
    `xvfb-run -a /usr/bin/python3 -m unittest discover -s tests -v`.
    Tests use temporary data directories and silent GStreamer output;
    `ffmpeg` generates MP3/FLAC fixtures. CI installs these test tools.
+   Classic-mode renders are compared with `tests/golden/*.png`; after an
+   intended visual change run `xvfb-run -a python3 tools/update_golden.py`
+   and look at the regenerated images before committing them. Changes to
+   the skin engine: also run `tools/skin_corpus.py` (downloads real skins).
 2. `bash -n packaging/build-deb.sh` if you touched packaging
 3. Actually play music: local files *and* — if your change goes anywhere
    near the pipeline — an internet radio URL (`Ctrl+L`), gapless track
