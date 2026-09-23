@@ -57,6 +57,8 @@ the old one back), **Enqueue** and **Play next** add to it, and tracks can be
 dragged onto the playlist. The index refreshes incrementally at startup, and
 every listen past half a track (or four minutes) adds to its play count.
 
+[The Media Library](screenshots/llama-amp-library.png)
+
 ## Classic skins
 
 **Settings → Skin** switches to classic mode: Winamp 2's main window, equalizer

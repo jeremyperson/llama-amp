@@ -11,6 +11,7 @@ import math
 import os
 import shutil
 import struct
+import subprocess
 import sys
 import tempfile
 import time
@@ -24,6 +25,7 @@ work = Path(tempfile.mkdtemp(prefix='llama-shots-'))
 os.environ['LLAMAAMP_DATA_DIR'] = str(work)
 
 from llamaamp.app import MusicPlayer  # noqa: E402  (pins the GTK 3 versions first)
+from llamaamp.library.scanner import Scanner  # noqa: E402
 from gi.repository import Gdk, GdkPixbuf, GLib, Gst  # noqa: E402
 
 TRACKS = [('Llamas - Whip It Good', 196), ('The Alpacas - Night Drive', 262),
@@ -98,6 +100,38 @@ for name, pitch in TRACKS:
     tone(path, pitch)
     paths.append(str(path))
 
+LIBRARY = [('Rock', 'Llamas', 'Whip It Good', ['Opening', 'Whip It Good', 'Andes Highway', 'Spit Take', 'Closing Time']),
+           ('Rock', 'Llamas', 'Second Wind', ['Second Wind', 'Pack Animal', 'Cria', 'Summit']),
+           ('Jazz', 'Vicuña Club', 'Andes Sunrise', ['Andes Sunrise', 'Blue Altiplano', 'Fleece', 'Cusco Nights']),
+           ('Jazz', 'The Alpacas', 'Night Drive', ['Night Drive', 'Headlights', 'Motel Pool', 'Dawn']),
+           ('Electronic', 'Guanaco Groove', 'Slow Burn', ['Slow Burn', 'Pulse', 'Afterglow', 'Low Tide'])]
+
+
+def library_shot(path):
+    """The Media Library over a small tagged demo collection (needs ffmpeg)."""
+    music = Path(tempfile.mkdtemp(prefix='llama-shots-music-'))
+    for genre, artist, album, titles in LIBRARY:
+        (music / artist / album).mkdir(parents=True)
+        for number, title in enumerate(titles, 1):
+            subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', paths[0], '-t', '1', '-metadata', f'title={title}',
+                            '-metadata', f'artist={artist}', '-metadata', f'album={album}', '-metadata',
+                            f'track={number}', '-metadata', f'genre={genre}',
+                            str(music / artist / album / f'{number:02d} {title}.flac')], check=True)
+    app = session('green')
+    app.library.add_folder(str(music))
+    Scanner(app.library, app.library.folders()).run()
+    app.show_library()
+    window = app._library_window
+    window.resize(980, 600)
+    pump(.4)
+    view = window.facet_views['genre']
+    view.get_selection().select_iter(next(row.iter for row in view.get_model() if row[1] == 'Jazz'))
+    pump(.4)
+    grab([window], path)
+    app.destroy()
+    pump(.2)
+
+
 shots = ROOT / 'screenshots'
 for theme, filename in (('green', 'llama-amp.png'), ('silver', 'llama-amp-silver.png'), ('amber', 'llama-amp-amber.png')):
     app = session(theme)
@@ -115,10 +149,14 @@ for theme, filename in (('green', 'llama-amp.png'), ('silver', 'llama-amp-silver
     app.destroy()
     pump(.2)
 
+if shutil.which('ffmpeg'):
+    library_shot(shots / 'llama-amp-library.png')
+
 assets = ROOT / 'docs' / 'assets'
 assets.mkdir(parents=True, exist_ok=True)
 for source, target in (('llama-amp.png', 'modern.png'), ('llama-amp-silver.png', 'silver.png'),
-                       ('llama-amp-amber.png', 'amber.png'), ('llama-amp-classic.png', 'classic.png')):
+                       ('llama-amp-amber.png', 'amber.png'), ('llama-amp-classic.png', 'classic.png'),
+                       ('llama-amp-library.png', 'library.png')):
     shutil.copyfile(shots / source, assets / target)
 shutil.copyfile(ROOT / 'llama-amp.svg', assets / 'llama-amp.svg')
 print('docs/assets updated')

@@ -126,6 +126,7 @@ class LibraryWindow(Gtk.Window):
         self.set_default_size(980, 620)
         self.set_icon_name('llama-amp')
         self.connect('key-press-event', self._key)
+        self.get_style_context().add_class('library-window')   # themed edge, not the desktop's
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         root.get_style_context().add_class('music-player-main')
         root.set_border_width(8)

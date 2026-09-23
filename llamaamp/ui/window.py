@@ -118,6 +118,7 @@ class WindowMixin:
         t = self.theme
         css = """
         window.llama-window { background-color: transparent; }
+        window.library-window { background-color: CHASSIS; }
         .music-player-main { background: CHASSIS; color: TEXT; border: 1px solid CONTROL;
                              border-radius: 5px; font: 12px "DejaVu Sans"; }
         .music-player-titlebar { background: linear-gradient(to bottom, CONTROL, PANEL);

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Llama Amp — a Winamp-inspired music player for Linux</title>
-<meta name="description" content="Llama Amp: a Winamp-inspired music player for Linux with real Winamp 2 skins, gapless and bit-perfect playback, crossfade, an equalizer and a live spectrum analyzer.">
+<meta name="description" content="Llama Amp: a Winamp-inspired music player for Linux with real Winamp 2 skins, a media library, gapless and bit-perfect playback, crossfade, an equalizer and a live spectrum analyzer.">
 <link rel="icon" href="assets/llama-amp.svg" type="image/svg+xml">
 <meta property="og:title" content="Llama Amp">
 <meta property="og:description" content="A Winamp-inspired music player for Linux. Real Winamp 2 skins, gapless and bit-perfect playback.">
@@ -37,7 +37,7 @@
   .demo img { display: block; width: 100%; max-width: 420px; height: auto; }
   section { padding: 36px 0; border-top: 1px solid var(--panel); }
   h2 { font-size: 1.6rem; margin: 0 0 18px; }
-  .features { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+  .features { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
   .feature { background: var(--panel); border: 1px solid var(--control); border-radius: var(--radius); padding: 16px 18px; }
   .feature h3 { margin: 0 0 6px; font-size: 1.02rem; color: var(--accent); }
   .feature p { margin: 0; color: var(--muted); font-size: .95rem; }
@@ -45,6 +45,7 @@
   figure { margin: 0; }
   figure img { width: 100%; height: auto; border: 1px solid var(--control); border-radius: var(--radius); background: #000; }
   figcaption { color: var(--muted); font-size: .9rem; margin-top: 6px; }
+  figure.wide { margin-top: 16px; }
   .install { display: grid; gap: 18px; }
   .install > div { min-width: 0; }   /* let long commands scroll inside their box */
   .install h3 { margin: 0 0 8px; font-size: 1.05rem; }
@@ -81,6 +82,7 @@
     <h2 id="features">What it does</h2>
     <div class="features">
       <div class="feature"><h3>Real Winamp skins</h3><p>Classic mode draws the main window, equalizer and playlist from any <code>.wsz</code> skin — shaped skins and skin fonts included. Drop a skin on the player to wear it.</p></div>
+      <div class="feature"><h3>Media Library</h3><p>Point it at your music folders, then browse by genre, artist and album, search as you type, and revisit what you play most.</p></div>
       <div class="feature"><h3>Bit-perfect and gapless</h3><p>Direct Mode keeps the signal untouched, ALSA output skips the desktop mixer, and albums play without gaps.</p></div>
       <div class="feature"><h3>Crossfade</h3><p>Two-player, equal-power crossfades of 2–10 seconds when playing through the desktop mixer.</p></div>
       <div class="feature"><h3>Equalizer and analyzer</h3><p>Ten bands with presets, ReplayGain, and a spectrum analyzer or oscilloscope — click to switch.</p></div>
@@ -99,6 +101,7 @@
       <figure><img src="assets/amber.png" width="560" height="740" loading="lazy" alt="Amber theme"><figcaption>Amber</figcaption></figure>
       <figure><img src="assets/classic.png" width="550" height="928" loading="lazy" alt="Classic mode with the built-in Llama skin"><figcaption>Classic mode, built-in skin</figcaption></figure>
     </div>
+    <figure class="wide"><img src="assets/library.png" width="980" height="600" loading="lazy" alt="The Media Library browsing jazz by artist and album"><figcaption>Media Library</figcaption></figure>
   </section>
 
   <section aria-labelledby="install">
