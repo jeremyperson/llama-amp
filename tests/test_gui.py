@@ -7,6 +7,7 @@ import tempfile
 import time
 import unittest
 import wave
+import zipfile
 import shutil
 import subprocess
 import threading
@@ -19,6 +20,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from llamaamp.app import MusicPlayer
 from llamaamp.constants import REPEAT_ALL, REPEAT_ONE, SHUFFLE_TRACKS
 from llamaamp.fileinfo import read_file_info
+from llamaamp.skin.default import build_default_skin
+from llamaamp.skin.loader import Skin, glyph_cell, parse_pledit, parse_viscolor
+from llamaamp.skin.sprites import FONT_LOOKUP
 from llamaamp.ui.themes import THEMES
 from gi.repository import Gdk, GLib, Gst, Gtk
 
@@ -797,6 +801,46 @@ class PlayerTests(unittest.TestCase):
         a.on_bus_buffering(None, Gst.Message.new_buffering(a.player, 100))
         self.assertFalse(a._buffering)
         self.assertTrue(a.is_playing)
+
+
+
+class SkinTests(unittest.TestCase):
+    def test_text_config_parsing_is_lenient(self):
+        colors = parse_viscolor('0,0,0, // background\n255, 128,7 // dots\nnot a color\n', [(9, 9, 9)] * 24)
+        self.assertEqual(colors[:3], [(0, 0, 0), (255, 128, 7), (9, 9, 9)])
+        self.assertEqual(len(colors), 24)
+        pledit = parse_pledit('[text]\nNormal=#00FF00\nCurrent=#FFFFFF\nNormalBG=junk\nFont=Tahoma\n')
+        self.assertEqual(pledit['normal'], (0, 255, 0))
+        self.assertEqual(pledit['normalbg'], (0, 0, 0))
+        self.assertEqual(pledit['font'], 'Tahoma')
+        self.assertEqual(parse_pledit('[broken')['font'], 'Arial')
+
+    def test_glyph_fallbacks(self):
+        self.assertEqual(glyph_cell('A'), FONT_LOOKUP['a'])
+        self.assertEqual(glyph_cell('é'), FONT_LOOKUP['e'])
+        self.assertEqual(glyph_cell('Å'), (2, 0))
+        self.assertEqual(glyph_cell('☃'), FONT_LOOKUP[' '])
+
+    def test_wsz_loads_case_insensitively_with_fallback_sheets(self):
+        default = build_default_skin()
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory, 'Tiny Skin.wsz'))
+            with zipfile.ZipFile(path, 'w') as archive:
+                for sheet, name in (('MAIN', 'Tiny/MAIN.BMP'), ('NUMBERS', 'Tiny/Numbers.bmp')):
+                    bmp = str(Path(directory, sheet + '.bmp'))
+                    default.sheets[sheet].savev(bmp, 'bmp', [], [])
+                    archive.write(bmp, name)
+                archive.writestr('Tiny/VISCOLOR.TXT', '1,2,3\n')
+                archive.writestr('Tiny/pledit.txt', '[Text]\nFont=Tahoma\n')
+            skin = Skin.load(path, default)
+        self.assertEqual(skin.name, 'Tiny Skin')
+        self.assertIsNot(skin.sheets['MAIN'], default.sheets['MAIN'])
+        self.assertIs(skin.sheets['EQMAIN'], default.sheets['EQMAIN'])     # missing: built-in
+        self.assertFalse(skin.has('NUMS_EX'))          # its own numbers.bmp wins
+        self.assertEqual(skin.digit_sprite(4), 'DIGIT_4')
+        self.assertEqual(skin.viscolors[0], (1, 2, 3))
+        self.assertEqual(skin.viscolors[1:], default.viscolors[1:])
+        self.assertEqual(skin.pledit['font'], 'Tahoma')
 
 
 if __name__ == '__main__':
