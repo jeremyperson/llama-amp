@@ -156,7 +156,7 @@ class PlaylistMixin:
     def _display_name(self, path):
         """Human name for a playlist entry: hostname for streams, stem for files."""
         if self._is_stream_url(path):
-            return urllib.parse.urlparse(path).hostname or path
+            return self.station_name(path) or urllib.parse.urlparse(path).hostname or path
         title = self._playlist_titles.get(path)
         if not title:
             cached = self._meta_cache.get(path)

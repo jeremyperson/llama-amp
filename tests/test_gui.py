@@ -5,6 +5,7 @@ import math
 import os
 import re
 import shutil
+import socket
 import struct
 import subprocess
 import sys
@@ -12,10 +13,11 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.parse
 import wave
 import zipfile
 from functools import partial
-from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from unittest.mock import patch
 
@@ -862,6 +864,16 @@ class PlayerTests(unittest.TestCase):
             collect(a._build_row_menu())
             a.show_library()
             collect(a._library_window)
+            a.show_lyrics()
+            collect(a._lyrics_window)
+            a._radio_server = 'http://127.0.0.1:9'          # offline: nothing to fetch
+            a.show_radio()
+            collect(a._radio_window)
+            a.show_file_info(path=self.files[0])
+            dialog = a._file_info_dialog
+            dialog.tags = {}
+            a._file_info_edit(dialog)
+            collect(dialog)
             # Dynamic or untranslatable text: track data, numbers, times, the brand
             dynamic = re.compile(r'^(LLAMA AMP|v[\d.]+|[\d:.+−-]*|[\d.]+ ?kHz|\d+ (kbps)?|—|[0-9]+\.wav|'
                                  r'[0-9]+|\d+/\d+|0:0\d|[\d.]+[Kk]|WAV.*|⇄.*|↻.*|[▶Ⅱ⚙▱−×]|CENTER|70%|Flat|.*\(hw:.*\))$')
@@ -1118,6 +1130,106 @@ class PlayerTests(unittest.TestCase):
         worker.add([self.files[0]])                       # already resolved this session
         self.wait_for(worker.idle)
         self.assertEqual(measured, [self.files[0]])
+
+    def radio_server(self, handler_log):
+        """A stand-in for radio-browser.info: stations for 'top', 'jazz' by name
+        and tag, and nothing for any other search."""
+        stations = [
+            {'stationuuid': 'u1', 'name': 'Llama FM', 'url_resolved': 'http://127.0.0.1:9/llama',
+             'tags': 'pop,hits', 'countrycode': 'pe', 'codec': 'MP3', 'bitrate': 128, 'votes': 900},
+            {'stationuuid': 'u2', 'name': 'Jazz  Alpaca', 'url_resolved': 'http://127.0.0.1:9/jazz',
+             'tags': 'jazz', 'countrycode': 'CL', 'codec': 'AAC', 'bitrate': 64, 'votes': '12'},
+            {'stationuuid': 'u3', 'name': 'Broken', 'url_resolved': 'ftp://nope', 'votes': 1},
+        ]
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                url = urllib.parse.urlparse(self.path)
+                query = urllib.parse.parse_qs(url.query)
+                handler_log.append((url.path, query, self.headers.get('User-Agent')))
+                if url.path == '/json/stations/search':
+                    if 'name' in query:
+                        body = [s for s in stations if query['name'][0].lower() in s['name'].lower()]
+                    elif 'tag' in query:
+                        body = [s for s in stations if query['tag'][0] in s.get('tags', '')]
+                    else:
+                        body = stations
+                elif url.path.startswith('/json/url/'):
+                    body = {'ok': True}
+                else:
+                    self.send_error(404)
+                    return
+                data = json.dumps(body).encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *_args):
+                pass
+
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f'http://127.0.0.1:{server.server_address[1]}'
+
+    def test_radio_directory_search_favorites_and_play(self):
+        a = self.app
+        log = []
+        a._radio_server = self.radio_server(log)
+        a.show_radio()
+        window = a._radio_window
+        self.wait_for(lambda: len(window.stations) == 2)
+        self.assertEqual([row[1] for row in window.stations], ['Llama FM', 'Jazz Alpaca'])
+        self.assertEqual([row[4] for row in window.stations], ['MP3 128k', 'AAC 64k'])
+        self.assertTrue(log[0][2].startswith('LlamaAmp/'))
+        self.assertEqual(log[0][1]['hidebroken'], ['true'])
+        # Search matches names and tags; a stale result can't replace a newer one
+        window.search.set_text('jazz')
+        window._search_now()
+        self.wait_for(lambda: [row[1] for row in window.stations] == ['Jazz Alpaca'])
+        window.search.set_text('zzz')
+        window._search_now()
+        self.wait_for(lambda: window.status.get_text() == 'No stations found.')
+        # Favorites persist in the config
+        window.search.set_text('')
+        window._search_now()
+        self.wait_for(lambda: len(window.stations) == 2)
+        window.station_view.get_selection().select_path(Gtk.TreePath(1))
+        window.toggle_favorite()
+        self.assertEqual(window.stations[1][0], '★')
+        self.assertEqual(window.favorite_button.get_label(), '★ Remove from Favorites')
+        self.assertEqual([s.name for s in a.radio_favorites()], ['Jazz Alpaca'])
+        window.views.select_row(window.views.get_row_at_index(1))
+        self.assertEqual([row[1] for row in window.stations], ['Jazz Alpaca'])
+        # Playing adds the stream under the station's name and counts the click
+        window.station_view.get_selection().select_path(Gtk.TreePath(0))
+        window.play()
+        self.assertEqual(a.playlist, ['http://127.0.0.1:9/jazz'])
+        self.assertEqual(a.playlist_store[0][1], 'Jazz Alpaca')
+        self.wait_for(lambda: any(path == '/json/url/u2' for path, _q, _ua in log))
+        a._write_config()
+        saved = json.loads(Path(a.config_path()).read_text())
+        self.assertEqual(saved['radio_names'], {'http://127.0.0.1:9/jazz': 'Jazz Alpaca'})
+        self.assertEqual(saved['radio_favorites'][0]['url'], 'http://127.0.0.1:9/jazz')
+        event = Gdk.Event.new(Gdk.EventType.KEY_PRESS)
+        event.keyval = Gdk.KEY_Escape
+        self.assertTrue(window._key(window, event))
+        self.pump(.02)
+        self.assertIsNone(a._radio_window)
+
+    def test_radio_directory_unreachable(self):
+        a = self.app
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            port = probe.getsockname()[1]
+        a._radio_server = f'http://127.0.0.1:{port}'       # nothing listens here
+        a.show_radio()
+        window = a._radio_window
+        self.wait_for(lambda: 'radio directory' in window.status.get_text())
+        self.assertEqual(len(window.stations), 0)
 
     def test_corrupt_config_values_fall_back_to_defaults(self):
         a = self.app

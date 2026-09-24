@@ -12,6 +12,7 @@ from llamaamp.analyzer import AnalyzerState, ScopeState, decode_pcm
 from llamaamp.crossfade import crossfade_gains
 from llamaamp.lyrics import find_lyrics, parse_lrc
 from llamaamp.order import PlaybackOrder
+from llamaamp.radio import Station, parse_stations
 from llamaamp.playlist import SORT_KEYS, move_block, sort_entries
 from llamaamp.ui.menus import parse_clock
 from llamaamp.settings import SCHEMA, SettingsStore, dump_settings, load_settings
@@ -277,6 +278,22 @@ class MoveBlockTests(unittest.TestCase):
         self.assertEqual(order, list('cdabef'))
         self.assertEqual(targets, [0, 1])
 
+
+
+class RadioTests(unittest.TestCase):
+    def test_saved_favorites_survive_damage_and_describe_quality(self):
+        good = Station(uuid='u', name='Llama FM', url='https://example.org/llama', codec='MP3', bitrate=128)
+        self.assertEqual(Station.from_dict(good.to_dict()), good)
+        self.assertEqual(Station.from_dict({'name': 'Llama FM', 'url': 'https://example.org/llama'}).quality(), '')
+        for damaged in ({'name': 'x'}, {'name': 'x', 'url': 'file:///etc/passwd'}, {'name': '', 'url': 'http://a'},
+                        {'url': 'http://a'}, {'name': 'x', 'url': 5}, {'name': 5, 'url': 'http://a'}):
+            self.assertIsNone(Station.from_dict(damaged), damaged)
+        self.assertEqual(Station(name='n', url='http://a', codec='UNKNOWN').quality(), '')
+        newer = dict(good.to_dict(), listeners=5)             # a key from a later version
+        self.assertEqual(Station.from_dict(newer), good)
+        self.assertEqual(parse_stations({'error': 'not a list'}), [])
+        self.assertEqual([s.name for s in parse_stations([{'name': 'A', 'url': 'http://a'},
+                                                         {'name': 'A again', 'url_resolved': 'http://a'}, 7])], ['A'])
 
 
 class LyricsTests(unittest.TestCase):

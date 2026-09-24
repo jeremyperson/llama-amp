@@ -186,8 +186,8 @@ class ClassicPlaylistWindow(SkinnedWindow):
     def _popup(self, name):
         app = self.app
         entries = {
-            'add': [(_('Add URL…'), app.open_url_dialog), (_('Add folder…'), app.add_folder),
-                    (_('Add files…'), app.add_files)],
+            'add': [(_('Internet radio…'), app.show_radio), (_('Add URL…'), app.open_url_dialog),
+                    (_('Add folder…'), app.add_folder), (_('Add files…'), app.add_files)],
             'remove': [(_('Remove selected'), app.remove_selected), (_('Remove missing files'), app.remove_missing),
                        (_('Clear playlist'), app.clear_playlist), (_('Undo edit'), app.undo_playlist)],
             'select': [(_('Select all'), lambda *_args: app.playlist_view.get_selection().select_all()),

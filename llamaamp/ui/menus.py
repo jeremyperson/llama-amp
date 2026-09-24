@@ -96,7 +96,8 @@ class MenusMixin:
 
     def _add_popup(self, button):
         self._popup_actions(button, [(_('Files… (Ctrl+O)'), self.add_files), (_('Folder…'), self.add_folder),
-                                     (_('Stream URL… (Ctrl+L)'), self.open_url_dialog)])
+                                     (_('Stream URL… (Ctrl+L)'), self.open_url_dialog),
+                                     (_('Internet radio… (Alt+R)'), self.show_radio)])
 
     def _playlist_popup(self, button):
         actions = [(_('Undo edit (Ctrl+Z)'), self.undo_playlist),
@@ -120,6 +121,9 @@ class MenusMixin:
         lyrics = Gtk.MenuItem(label=_("Lyrics… (Alt+Y)"))
         lyrics.connect("activate", self.show_lyrics)
         menu.append(lyrics)
+        radio = Gtk.MenuItem(label=_("Internet Radio… (Alt+R)"))
+        radio.connect("activate", self.show_radio)
+        menu.append(radio)
         self._skin_menu(menu)
         self._appearance_menus(menu)
         menu.append(Gtk.SeparatorMenuItem())

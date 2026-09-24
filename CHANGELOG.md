@@ -13,6 +13,9 @@
   song) and play at a matching level instead of at full volume. Nothing is
   written to your files; turn it off under ReplayGain → Measure Untagged
   Files.
+- Internet radio directory (Alt+R, or Add ▾ → Internet radio…): browse the
+  most voted stations on radio-browser.info, search by name or genre, and
+  keep favorites. Stations show up in the playlist under their names.
 
 ## 1.8 — 2026-09-23
 

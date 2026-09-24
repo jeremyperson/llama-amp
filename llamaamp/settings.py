@@ -100,6 +100,12 @@ def _shuffle(value):
     return _clamped(int, 0, 2)(value)
 
 
+def _dict_list(value):
+    if isinstance(value, list) and all(isinstance(item, dict) for item in value):
+        return value
+    raise ValueError(value)
+
+
 def _dict(value):
     if isinstance(value, dict):
         return value
@@ -151,6 +157,8 @@ SCHEMA = {
     'skin': Setting(None, _str_or_none),       # None: modern; 'builtin' or a skins/ entry
     'classic_windows': Setting({}, _dict),   # classic EQ/playlist visibility
     'library_scan_on_start': Setting(True, _not_false),
+    'radio_favorites': Setting([], _dict_list),
+    'radio_names': Setting({}, _dict),         # stream URL -> station name, for the playlist
 }
 
 

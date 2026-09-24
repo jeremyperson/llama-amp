@@ -38,6 +38,7 @@ from .ui.file_info import FileInfoMixin
 from .ui.library import LibraryMixin
 from .ui.lyrics import LyricsMixin
 from .ui.menus import MenusMixin
+from .ui.radio import RadioMixin
 from .ui.playlist_view import PlaylistViewMixin
 from .ui.window import WindowMixin
 from .updates import UpdatesMixin
@@ -46,7 +47,7 @@ from .updates import UpdatesMixin
 class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisMixin,
                   DesktopMixin, ScrobbleMixin, UpdatesMixin, AnalyzerViewMixin, WindowMixin,
                   MenusMixin, ControlsMixin, PlaylistViewMixin, FileInfoMixin, ClassicMixin, LibraryMixin,
-                  LyricsMixin, LoudnessMixin, Gtk.Window):
+                  LyricsMixin, LoudnessMixin, RadioMixin, Gtk.Window):
     def __init__(self):
         super().__init__(title=APP_NAME)
         self.tasks = MainLoopTasks()
@@ -114,6 +115,7 @@ class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, Playl
         self._playlist_tags = {}    # path -> artist/album/disc/track for sorting
         self._file_info_dialog = None
         self._lyrics_window = None
+        self._radio_window = None
         self._classic = None            # ClassicMode while a classic skin is active
         self._default_skin = None
         self.skin = None
@@ -261,6 +263,9 @@ class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, Playl
         if event.state & Gdk.ModifierType.MOD1_MASK and key in (Gdk.KEY_y, Gdk.KEY_Y):
             self.show_lyrics()
             return True
+        if event.state & Gdk.ModifierType.MOD1_MASK and key in (Gdk.KEY_r, Gdk.KEY_R):
+            self.show_radio()
+            return True
         if key == Gdk.KEY_space:
             self.toggle_play_pause(None)
             return True
@@ -335,6 +340,8 @@ class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, Playl
         self._close_library()
         if self._lyrics_window is not None:
             self._lyrics_window.destroy()
+        if self._radio_window is not None:
+            self._radio_window.destroy()
         if self._classic is not None:
             self._classic.destroy()
         try:
