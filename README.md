@@ -73,6 +73,8 @@ looked up online.
 voted stations, a search by name or genre, and your favorites (☆). Play or
 Enqueue adds the station to the playlist under its name.
 
+[The Internet Radio window](screenshots/llama-amp-radio.png)
+
 ## Editing tags
 
 **Alt+3** (File Info) shows a track's tags, audio format and file details.

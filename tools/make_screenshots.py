@@ -14,8 +14,10 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import wave
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
@@ -26,7 +28,7 @@ os.environ['LLAMAAMP_DATA_DIR'] = str(work)
 
 from llamaamp.app import MusicPlayer  # noqa: E402  (pins the GTK 3 versions first)
 from llamaamp.library.scanner import Scanner  # noqa: E402
-from gi.repository import Gdk, GdkPixbuf, GLib, Gst  # noqa: E402
+from gi.repository import Gdk, GdkPixbuf, GLib, Gst, Gtk  # noqa: E402
 
 TRACKS = [('Llamas - Whip It Good', 196), ('The Alpacas - Night Drive', 262),
           ('Vicuña Club - Andes Sunrise', 330), ('Guanaco Groove - Slow Burn', 220)]
@@ -132,6 +134,48 @@ def library_shot(path):
     pump(.2)
 
 
+STATIONS = [('Llama FM', 'pop, hits', 'PE', 'MP3', 128, 9120),
+            ('Andes Jazz Lounge', 'jazz, smooth jazz', 'CL', 'AAC', 96, 4410),
+            ('Wool Radio Classics', 'classical', 'AR', 'MP3', 192, 3020),
+            ('Alpaca Beats', 'electronic, house', 'BO', 'OGG', 160, 1800),
+            ('Altiplano Indie', 'indie, alternative', 'PE', 'MP3', 128, 1260),
+            ('Titicaca Talk', 'news, talk', 'PE', 'MP3', 64, 950),
+            ('Pack Animal Punk', 'punk, rock', 'EC', 'MP3', 128, 410)]
+
+
+def radio_shot(path):
+    """The Internet Radio window over made-up stations from a local stand-in
+    for radio-browser.info (no network)."""
+    body = json.dumps([{'stationuuid': str(i), 'name': name, 'url_resolved': f'http://127.0.0.1:9/{i}',
+                        'tags': tags, 'countrycode': country, 'codec': codec, 'bitrate': bitrate, 'votes': votes}
+                       for i, (name, tags, country, codec, bitrate, votes) in enumerate(STATIONS)]).encode()
+
+    class Directory(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args):
+            pass
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Directory)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    app = session('green')
+    app._radio_server = f'http://127.0.0.1:{server.server_address[1]}'
+    app.show_radio()
+    window = app._radio_window
+    window.resize(820, 420)
+    pump(1)
+    window.station_view.get_selection().select_path(Gtk.TreePath(1))
+    window.toggle_favorite()
+    pump(.4)
+    grab([window], path)
+    app.destroy()
+    pump(.2)
+    server.shutdown()
+
+
 shots = ROOT / 'screenshots'
 for theme, filename in (('green', 'llama-amp.png'), ('silver', 'llama-amp-silver.png'), ('amber', 'llama-amp-amber.png')):
     app = session(theme)
@@ -151,12 +195,13 @@ for theme, filename in (('green', 'llama-amp.png'), ('silver', 'llama-amp-silver
 
 if shutil.which('ffmpeg'):
     library_shot(shots / 'llama-amp-library.png')
+radio_shot(shots / 'llama-amp-radio.png')
 
 assets = ROOT / 'docs' / 'assets'
 assets.mkdir(parents=True, exist_ok=True)
 for source, target in (('llama-amp.png', 'modern.png'), ('llama-amp-silver.png', 'silver.png'),
                        ('llama-amp-amber.png', 'amber.png'), ('llama-amp-classic.png', 'classic.png'),
-                       ('llama-amp-library.png', 'library.png')):
+                       ('llama-amp-library.png', 'library.png'), ('llama-amp-radio.png', 'radio.png')):
     shutil.copyfile(shots / source, assets / target)
 shutil.copyfile(ROOT / 'llama-amp.svg', assets / 'llama-amp.svg')
 print('docs/assets updated')

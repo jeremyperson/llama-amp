@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.9 — 2026-09-24
 
 - Lyrics (Alt+Y): shows the lyrics of the playing track from an .lrc file
   with the same name beside it, or from its tags. Synced lyrics highlight
