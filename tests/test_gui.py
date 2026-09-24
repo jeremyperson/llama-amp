@@ -1,6 +1,7 @@
 """Run with xvfb-run -a /usr/bin/python3 -m unittest discover -s tests."""
 import gettext
 import json
+import math
 import os
 import re
 import shutil
@@ -27,7 +28,7 @@ from llamaamp import i18n
 from llamaamp.app import MusicPlayer
 from llamaamp.constants import REPEAT_ALL, REPEAT_ONE, SHUFFLE_TRACKS
 from llamaamp.fileinfo import read_file_info
-from llamaamp import tags
+from llamaamp import rgscan, tags
 from llamaamp.ui.file_info import RESPONSE_EDIT, RESPONSE_SAVE
 from llamaamp.library import queries
 from llamaamp.library.scanner import Scanner
@@ -1060,6 +1061,63 @@ class PlayerTests(unittest.TestCase):
         dialog = a._file_info_dialog
         self.wait_for(lambda: dialog.fields.get('Sample rate'))
         self.assertFalse(dialog.edit_button.get_visible())
+
+    def tone(self, name, amplitude):
+        path = str(Path(self.directory.name, name))
+        with wave.open(path, 'wb') as audio:
+            audio.setparams((1, 2, 16000, 0, 'NONE', 'not compressed'))
+            audio.writeframes(b''.join(struct.pack('<h', int(amplitude * 32767 * math.sin(2 * math.pi * 440 * n / 16000)))
+                                       for n in range(16000)))
+        return path
+
+    def test_untagged_files_are_measured_and_play_at_their_gain(self):
+        a = self.app
+        loud, quiet = self.tone('loud.wav', .8), self.tone('quiet.wav', .1)
+        a.set_replaygain('track')
+        a._add_paths([loud, quiet])
+        self.wait_for(lambda: a._loudness.idle() and a.library.loudness(quiet, rgscan.file_stamp(quiet)))
+        loud_gain = a.library.loudness(loud, rgscan.file_stamp(loud))[0]
+        quiet_gain = a.library.loudness(quiet, rgscan.file_stamp(quiet))[0]
+        self.assertLess(loud_gain, quiet_gain - 15)       # 18 dB apart
+        a._play_index(1)
+        self.assertAlmostEqual(a.rgvolume.get_property('fallback-gain'), quiet_gain)
+        a._play_index(0)
+        self.assertAlmostEqual(a.rgvolume.get_property('fallback-gain'), loud_gain)
+        # A changed file is measured again when it plays; turning measuring off stops the queue
+        with wave.open(quiet, 'wb') as audio:
+            audio.setparams((1, 2, 16000, 0, 'NONE', 'not compressed'))
+            audio.writeframes(b'\0\0' * 800)
+        a._play_index(1)
+        self.assertEqual(a.rgvolume.get_property('fallback-gain'), 0.0)
+        self.wait_for(lambda: a._loudness.idle() and a.library.loudness(quiet, rgscan.file_stamp(quiet)))
+        self.assertEqual(a.library.loudness(quiet, rgscan.file_stamp(quiet)), (None,))   # silence
+        a.toggle_replaygain_analyze()
+        self.assertFalse(a._loudness_wanted())
+        extra = self.tone('extra.wav', .5)
+        a._add_paths([extra])
+        self.pump(.2)
+        self.assertIsNone(a.library.loudness(extra, rgscan.file_stamp(extra)))
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and rgscan.mutagen, 'ffmpeg and mutagen tag a test file')
+    def test_tagged_files_keep_their_own_gain(self):
+        a = self.app
+        tagged = str(Path(self.directory.name, 'tagged.flac'))
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', self.tone('t.wav', .5),
+                        '-metadata', 'REPLAYGAIN_TRACK_GAIN=-6.20 dB', tagged], check=True)
+        self.assertTrue(rgscan.has_rg_tags(tagged))
+        self.assertFalse(rgscan.has_rg_tags(self.files[0]))
+        measured = []
+        worker = rgscan.LoudnessWorker(a.library, measure=lambda path: measured.append(path) or -3.0)
+        worker.start()
+        self.addCleanup(worker.close)
+        worker.add([tagged, self.files[0]])
+        self.wait_for(worker.idle)
+        self.assertEqual(measured, [self.files[0]])
+        self.assertEqual(a.library.loudness(tagged, rgscan.file_stamp(tagged)), (None,))
+        self.assertEqual(a.library.loudness(self.files[0], rgscan.file_stamp(self.files[0])), (-3.0,))
+        worker.add([self.files[0]])                       # already resolved this session
+        self.wait_for(worker.idle)
+        self.assertEqual(measured, [self.files[0]])
 
     def test_corrupt_config_values_fall_back_to_defaults(self):
         a = self.app

@@ -97,7 +97,10 @@ Screenshots use demonstration track labels and generated test audio.
 **Playback**
 - Gapless playback (GStreamer `about-to-finish` handoff)
 - Crossfade (2–10 s, equal-power) when playing through the desktop mixer
-- ReplayGain volume normalization (track/album modes, rgvolume + limiter)
+- ReplayGain volume normalization (track/album modes, rgvolume + limiter).
+  Tracks without ReplayGain tags are measured in the background and play at
+  a matching level; files are never modified (⚙ → ReplayGain → Measure
+  Untagged Files)
 - Internet radio: open SHOUTcast/Icecast URLs (`Ctrl+L`) with live ICY
   now-playing titles and buffering handling
 - **Direct Mode**: bit-transparent output — the EQ/balance DSP chain is fully

@@ -8,6 +8,11 @@
 - Tag editor: File Info (Alt+3) has Edit Tags for FLAC, MP3, Ogg, Opus and
   M4A files when python3-mutagen is installed. Saved changes show up in the
   playlist, the now-playing display and the Media Library immediately.
+- ReplayGain for untagged files: with ReplayGain on, tracks that have no
+  ReplayGain tags are measured in the background (about half a second per
+  song) and play at a matching level instead of at full volume. Nothing is
+  written to your files; turn it off under ReplayGain → Measure Untagged
+  Files.
 
 ## 1.8 — 2026-09-23
 

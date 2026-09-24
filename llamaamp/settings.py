@@ -131,6 +131,7 @@ SCHEMA = {
     'eq_enabled': Setting(True, _not_false),
     'time_remaining': Setting(False, _is_true),
     'replaygain': Setting('off', _choice(RG_MODES)),
+    'replaygain_analyze': Setting(True, _not_false),   # measure untagged files
     'listenbrainz_token': Setting(None, _str_or_none),
     'scrobble_enabled': Setting(False, _is_true),
     'notifications': Setting(True, _not_false),

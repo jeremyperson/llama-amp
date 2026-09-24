@@ -186,6 +186,13 @@ class MenusMixin:
             item.set_active(self.replaygain == mode)
             item.connect("activate", lambda _w, m=mode: self.set_replaygain(m))
             rg_sub.append(item)
+        rg_sub.append(Gtk.SeparatorMenuItem())
+        measure_item = Gtk.CheckMenuItem(label=_("Measure Untagged Files"))
+        measure_item.set_tooltip_text(_("Analyze the loudness of tracks without ReplayGain tags in the "
+                                        "background, so they play at a matching level (files are not changed)"))
+        measure_item.set_active(self.config.get('replaygain_analyze', True) is not False)
+        measure_item.connect("toggled", self.toggle_replaygain_analyze)
+        rg_sub.append(measure_item)
         rg_item.set_submenu(rg_sub)
         menu.append(rg_item)
 

@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS tracks (
 CREATE INDEX IF NOT EXISTS tracks_album ON tracks(album);
 CREATE INDEX IF NOT EXISTS tracks_artist ON tracks(artist);
 CREATE INDEX IF NOT EXISTS tracks_added ON tracks(added);
+-- measured ReplayGain track gain of untagged files (NULL: tagged or unreadable)
+CREATE TABLE IF NOT EXISTS loudness (path TEXT PRIMARY KEY, mtime REAL, size INTEGER, gain REAL);
 '''
 
 FTS_SCHEMA = '''
@@ -137,6 +139,18 @@ class LibraryDB:
             cursor = self.conn.execute('UPDATE tracks SET plays = plays + 1, last_played = ? WHERE path = ?',
                                        (when or time.time(), store_path(path)))
             return cursor.rowcount > 0
+
+    # -- loudness -----------------------------------------------------------
+    def loudness(self, path, stamp):
+        """(gain,) measured for this version of the file, or None if unknown."""
+        rows = self.execute('SELECT gain FROM loudness WHERE path = ? AND mtime = ? AND size = ?',
+                            (store_path(path),) + tuple(stamp))
+        return (rows[0]['gain'],) if rows else None
+
+    def set_loudness(self, path, stamp, gain):
+        with self.lock, self.conn:
+            self.conn.execute('INSERT OR REPLACE INTO loudness(path, mtime, size, gain) VALUES (?, ?, ?, ?)',
+                              (store_path(path),) + tuple(stamp) + (gain,))
 
     def count(self):
         return self.execute('SELECT COUNT(*) AS n FROM tracks')[0]['n']

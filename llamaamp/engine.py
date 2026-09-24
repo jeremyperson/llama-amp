@@ -198,6 +198,7 @@ class EngineMixin:
                 _('ReplayGain {mode} armed — no effect while Direct Mode is ON').format(mode=mode))
         else:
             self.show_drop_feedback(_('ReplayGain: {mode}').format(mode=mode))
+        self._loudness_queue_playlist()
 
     def _list_alsa_devices(self):
         """[(hw:X,Y, 'CardName — PcmName'), ...] for all playback PCMs."""

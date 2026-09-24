@@ -531,6 +531,7 @@ class ControlsMixin:
         self.update_audio_display(file_path)
         self._select_row(index)
         self._lyrics_track_changed()
+        self._apply_fallback_gain(file_path)
         self.schedule_save_config()
         self._scrobble_reset()
         self._mpris_notify_track()

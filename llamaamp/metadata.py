@@ -51,6 +51,7 @@ class MetadataMixin:
                     and not self._is_stream_url(path) and self._playable(path)):
                 self._probe_inflight.add(path)
                 self._probe_queue.put(('meta', path, {'sample_rate': 0, 'bitrate': 0, 'channels': 0}))
+        self._loudness_queue_playlist()
 
     @staticmethod
     def _cache_get(cache, key):

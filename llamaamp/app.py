@@ -29,6 +29,7 @@ from .metadata import MetadataMixin, MetadataWorker
 from .mpris import MprisMixin
 from .order import PlaybackOrder
 from .playlist import PlaylistMixin
+from .rgscan import LoudnessMixin
 from .scrobble import ScrobbleMixin
 from .tasks import MainLoopTasks
 from .ui.classic import ClassicMixin
@@ -45,7 +46,7 @@ from .updates import UpdatesMixin
 class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisMixin,
                   DesktopMixin, ScrobbleMixin, UpdatesMixin, AnalyzerViewMixin, WindowMixin,
                   MenusMixin, ControlsMixin, PlaylistViewMixin, FileInfoMixin, ClassicMixin, LibraryMixin,
-                  LyricsMixin, Gtk.Window):
+                  LyricsMixin, LoudnessMixin, Gtk.Window):
     def __init__(self):
         super().__init__(title=APP_NAME)
         self.tasks = MainLoopTasks()
@@ -151,6 +152,7 @@ class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, Playl
         # Restore saved settings (volume/balance/eq/shuffle/repeat/last track)
         self.load_config()
         self._open_library()
+        self._open_loudness()
 
         # Attach the audio filter: full DSP chain, or analyzer-only tap in
         # direct mode (spectrum bars stay alive either way)
@@ -301,6 +303,7 @@ class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, Playl
             return
         self._destroyed = True
         self.metadata_worker.close()
+        self._loudness.close()
         self._invalidate_next()
         if self._analyzer_id is not None:
             self.tasks.source_remove(self._analyzer_id)
