@@ -981,6 +981,35 @@ class PlayerTests(unittest.TestCase):
         self.app = a = MusicPlayer()                               # the playlist file keeps the exact bytes
         self.assertEqual(a.playlist[1], path)
 
+    def test_lyrics_window_follows_synced_lines_and_track_changes(self):
+        a = self.app
+        Path(self.files[0]).with_suffix('.lrc').write_text('[00:00.00]One\n[00:00.50]Two\n[00:00.90]Three\n')
+        a._add_paths(self.files)
+        a.show_lyrics()
+        window = a._lyrics_window
+        a._play_index(0)
+        self.assertTrue(window.lyrics.synced)
+        a._lyrics_tick(600 * Gst.MSECOND)
+        self.assertEqual(window.line, 1)
+        buffer = window.view.get_buffer()
+        start = buffer.get_iter_at_line(1)
+        self.assertTrue(start.has_tag(buffer.get_tag_table().lookup('current')))
+        a._play_index(1)                                     # no lyrics: a hint naming the file
+        self.assertIsNone(window.lyrics)
+        text = buffer.get_text(buffer.get_start_iter(), buffer.get_end_iter(), False)
+        self.assertIn('"1.lrc"', text)
+
+    @unittest.skipUnless(shutil.which('ffmpeg'), 'ffmpeg embeds lyrics in a test file')
+    def test_lyrics_from_tags(self):
+        a = self.app
+        tagged = str(Path(self.directory.name, 'sung.flac'))
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', self.files[0], '-metadata', 'lyrics=Plain words\nMore words',
+                        tagged], check=True)
+        a._add_paths([tagged])
+        a.show_lyrics()
+        self.assertEqual((a._lyrics_window.lyrics.source, a._lyrics_window.lyrics.synced), ('tags', False))
+        self.assertEqual([text for _time, text in a._lyrics_window.lyrics.lines], ['Plain words', 'More words'])
+
     def test_corrupt_config_values_fall_back_to_defaults(self):
         a = self.app
         a.destroy()

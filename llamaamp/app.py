@@ -35,6 +35,7 @@ from .ui.classic import ClassicMixin
 from .ui.controls import ControlsMixin
 from .ui.file_info import FileInfoMixin
 from .ui.library import LibraryMixin
+from .ui.lyrics import LyricsMixin
 from .ui.menus import MenusMixin
 from .ui.playlist_view import PlaylistViewMixin
 from .ui.window import WindowMixin
@@ -44,7 +45,7 @@ from .updates import UpdatesMixin
 class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, PlaylistMixin, MprisMixin,
                   DesktopMixin, ScrobbleMixin, UpdatesMixin, AnalyzerViewMixin, WindowMixin,
                   MenusMixin, ControlsMixin, PlaylistViewMixin, FileInfoMixin, ClassicMixin, LibraryMixin,
-                  Gtk.Window):
+                  LyricsMixin, Gtk.Window):
     def __init__(self):
         super().__init__(title=APP_NAME)
         self.tasks = MainLoopTasks()
@@ -111,6 +112,7 @@ class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, Playl
         self._playlist_titles = {}  # path -> tagged title, or None after probing
         self._playlist_tags = {}    # path -> artist/album/disc/track for sorting
         self._file_info_dialog = None
+        self._lyrics_window = None
         self._classic = None            # ClassicMode while a classic skin is active
         self._default_skin = None
         self.skin = None
@@ -215,7 +217,7 @@ class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, Playl
     def on_window_key_press(self, widget, event):
         """Global shortcuts: Space play/pause, Winamp's Z/X/C/V/B transport,
         arrows seek/volume, S shuffle, R repeat, J jump to file, Ctrl+J jump to
-        time, Ctrl+T elapsed/remaining, Ctrl+D double size, Alt+3 file info, Alt+L library,
+        time, Ctrl+T elapsed/remaining, Ctrl+D double size, Alt+3 file info, Alt+L library, Alt+Y lyrics,
         Ctrl+O add files, Ctrl+L open URL.
         Delete/Backspace propagate to the playlist."""
         # Typing in an entry (playlist search, dialogs) must never trigger
@@ -253,6 +255,9 @@ class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, Playl
             return True
         if event.state & Gdk.ModifierType.MOD1_MASK and key in (Gdk.KEY_l, Gdk.KEY_L):
             self.show_library()
+            return True
+        if event.state & Gdk.ModifierType.MOD1_MASK and key in (Gdk.KEY_y, Gdk.KEY_Y):
+            self.show_lyrics()
             return True
         if key == Gdk.KEY_space:
             self.toggle_play_pause(None)
@@ -325,6 +330,8 @@ class MusicPlayer(EngineMixin, CrossfadeMixin, ConfigMixin, MetadataMixin, Playl
                 pass
         self._finish_crossfade()
         self._close_library()
+        if self._lyrics_window is not None:
+            self._lyrics_window.destroy()
         if self._classic is not None:
             self._classic.destroy()
         try:

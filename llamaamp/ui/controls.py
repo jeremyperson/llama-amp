@@ -530,6 +530,7 @@ class ControlsMixin:
         self.get_audio_properties(file_path)
         self.update_audio_display(file_path)
         self._select_row(index)
+        self._lyrics_track_changed()
         self.schedule_save_config()
         self._scrobble_reset()
         self._mpris_notify_track()
@@ -596,6 +597,7 @@ class ControlsMixin:
                     self._last_progress = progress
                     self.position_scale.set_value(progress)
                 self._crossfade_tick(position)
+                self._lyrics_tick(position)
         self._scrobble_tick()
         # Song-end is handled by the real EOS bus message (on_bus_eos), not polling.
         return True

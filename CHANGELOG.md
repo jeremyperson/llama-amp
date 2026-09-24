@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Lyrics (Alt+Y): shows the lyrics of the playing track from an .lrc file
+  with the same name beside it, or from its tags. Synced lyrics highlight
+  the current line and scroll along; nothing is fetched online.
+
 ## 1.8 — 2026-09-23
 
 - Fixed: files whose names aren't valid UTF-8 (common in older collections)

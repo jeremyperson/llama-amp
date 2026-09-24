@@ -59,6 +59,13 @@ every listen past half a track (or four minutes) adds to its play count.
 
 [The Media Library](screenshots/llama-amp-library.png)
 
+## Lyrics
+
+**Alt+Y** shows the playing track's lyrics from an `.lrc` file with the same
+name next to it (`Song.flac` → `Song.lrc`) or from lyrics in its tags. Synced
+`.lrc` lyrics highlight the current line as the song plays. Nothing is
+looked up online.
+
 ## Classic skins
 
 **Settings → Skin** switches to classic mode: Winamp 2's main window, equalizer

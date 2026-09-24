@@ -10,6 +10,7 @@ import struct
 
 from llamaamp.analyzer import AnalyzerState, ScopeState, decode_pcm
 from llamaamp.crossfade import crossfade_gains
+from llamaamp.lyrics import find_lyrics, parse_lrc
 from llamaamp.order import PlaybackOrder
 from llamaamp.playlist import SORT_KEYS, move_block, sort_entries
 from llamaamp.ui.menus import parse_clock
@@ -275,6 +276,38 @@ class MoveBlockTests(unittest.TestCase):
         order, targets = move_block(self.ENTRIES, [2, 3], -5)
         self.assertEqual(order, list('cdabef'))
         self.assertEqual(targets, [0, 1])
+
+
+
+class LyricsTests(unittest.TestCase):
+    LRC = """[ar:Llamas]
+[ti:Whip It Good]
+[offset:+500]
+[00:12.00]First line
+[00:15.5][01:02:30]Chorus
+[00:20]
+Not timed, ignored in synced lyrics
+"""
+
+    def test_lrc_timestamps_offsets_and_metadata(self):
+        lines, synced = parse_lrc(self.LRC)
+        self.assertTrue(synced)
+        self.assertEqual(lines, [(11.5, 'First line'), (15.0, 'Chorus'), (19.5, ''), (61.8, 'Chorus')])
+
+    def test_plain_text_is_unsynced(self):
+        lines, synced = parse_lrc('Verse one\n\n  Verse two  \n')
+        self.assertFalse(synced)
+        self.assertEqual(lines, [(None, 'Verse one'), (None, 'Verse two')])
+
+    def test_sidecar_file_and_current_line(self):
+        with tempfile.TemporaryDirectory() as directory:
+            track = Path(directory, 'song.flac')
+            track.write_bytes(b'')
+            Path(directory, 'song.lrc').write_text(self.LRC, encoding='utf-8')
+            lyrics = find_lyrics(str(track))
+        self.assertEqual((lyrics.source, lyrics.synced), ('file', True))
+        self.assertEqual([lyrics.current(t) for t in (0, 11.5, 14.9, 16, 70)], [-1, 0, 0, 1, 3])
+        self.assertIsNone(find_lyrics('https://radio.example/stream'))
 
 
 if __name__ == '__main__':
