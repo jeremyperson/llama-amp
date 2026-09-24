@@ -8,7 +8,7 @@ from ..constants import APP_NAME, N_
 from ..i18n import _, ngettext
 from ..library import queries
 from ..library.db import LibraryDB
-from ..library.scanner import Scanner
+from ..library.scanner import Scanner, probe_tags
 from ..paths import displayable, real_path, store_path
 from ..playlist import added_feedback
 
@@ -76,6 +76,17 @@ class LibraryMixin:
         """A track was listened to (half its length or four minutes)."""
         if getattr(self, 'library', None) is not None and self.library.record_play(path):
             self._library_changed()
+
+    def library_file_changed(self, path):
+        """Re-index one file now (after its tags were edited) if it's in the library."""
+        if getattr(self, 'library', None) is None or not self.library.has(path):
+            return
+        try:
+            stat = os.stat(path)
+        except OSError:
+            return
+        self.library.upsert([dict(probe_tags(path), path=path, mtime=stat.st_mtime, size=stat.st_size)])
+        self._library_changed()
 
     def show_library(self, *_args):
         if self._library_window is None:

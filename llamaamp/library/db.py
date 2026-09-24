@@ -111,6 +111,9 @@ class LibraryDB:
         return {real_path(row['path']): (row['mtime'], row['size'])
                 for row in self.execute('SELECT path, mtime, size FROM tracks')}
 
+    def has(self, path):
+        return bool(self.execute('SELECT 1 FROM tracks WHERE path = ?', (store_path(path),)))
+
     def upsert(self, rows):
         """rows: dicts with path, mtime, size and TAG_COLUMNS. New tracks get an
         'added' time; play counts and ratings of existing ones are kept."""

@@ -66,6 +66,14 @@ name next to it (`Song.flac` → `Song.lrc`) or from lyrics in its tags. Synced
 `.lrc` lyrics highlight the current line as the song plays. Nothing is
 looked up online.
 
+## Editing tags
+
+**Alt+3** (File Info) shows a track's tags, audio format and file details.
+With `python3-mutagen` installed, **Edit Tags** changes the title, artists,
+album, album artist, track and disc numbers, year, genre and comment of
+FLAC, MP3, Ogg Vorbis, Opus and M4A files; the playlist, the now-playing
+display and the library pick up the change right away.
+
 ## Classic skins
 
 **Settings → Skin** switches to classic mode: Winamp 2's main window, equalizer
@@ -128,7 +136,7 @@ Screenshots use demonstration track labels and generated test audio.
 - Keyboard shortcuts: Winamp's `Z` `X` `C` `V` `B` (previous · play · pause ·
   stop · next) · `Space` play/pause · `←/→` seek ±5s · `↑/↓` volume ·
   `S` shuffle · `R` repeat · `J` jump to file · `Ctrl+J` jump to time ·
-  `Ctrl+T` elapsed/remaining · `Ctrl+D` double size · `Alt+3` file info ·
+  `Ctrl+T` elapsed/remaining · `Ctrl+D` double size · `Alt+3` file info and tag editing · `Alt+Y` lyrics ·
   `Ctrl+O` add files · `Ctrl+L` open URL ·
   `Del` remove from playlist
 

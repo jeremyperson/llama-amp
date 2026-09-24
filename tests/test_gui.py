@@ -27,6 +27,9 @@ from llamaamp import i18n
 from llamaamp.app import MusicPlayer
 from llamaamp.constants import REPEAT_ALL, REPEAT_ONE, SHUFFLE_TRACKS
 from llamaamp.fileinfo import read_file_info
+from llamaamp import tags
+from llamaamp.ui.file_info import RESPONSE_EDIT, RESPONSE_SAVE
+from llamaamp.library import queries
 from llamaamp.library.scanner import Scanner
 from llamaamp.skin.default import build_default_skin
 from llamaamp.skin.loader import Skin, glyph_cell, parse_pledit, parse_region, parse_viscolor
@@ -1009,6 +1012,54 @@ class PlayerTests(unittest.TestCase):
         a.show_lyrics()
         self.assertEqual((a._lyrics_window.lyrics.source, a._lyrics_window.lyrics.synced), ('tags', False))
         self.assertEqual([text for _time, text in a._lyrics_window.lyrics.lines], ['Plain words', 'More words'])
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and tags.mutagen, 'ffmpeg and mutagen for the tag editor')
+    def test_file_info_edits_tags_and_everything_follows(self):
+        a = self.app
+        tagged = str(Path(self.directory.name, 'edit me.flac'))
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', self.files[0], '-metadata', 'title=Old Name',
+                        '-metadata', 'artist=Llama', tagged], check=True)
+        a.library.add_folder(self.directory.name)
+        Scanner(a.library, a.library.folders()).run()
+        a._add_paths([tagged])
+        self.wait_for(lambda: a._display_name(tagged) == 'Old Name')
+        a.show_file_info(path=tagged)
+        dialog = a._file_info_dialog
+        self.wait_for(lambda: dialog.edit_button.get_visible())
+        dialog.response(RESPONSE_EDIT)
+        self.assertEqual(dialog.entries['title'].get_text(), 'Old Name')
+        dialog.entries['title'].set_text('New Name')
+        dialog.entries['artist'].set_text('Llama; Alpaca')
+        dialog.entries['date'].set_text('1997')
+        dialog.response(RESPONSE_SAVE)
+        self.assertEqual(tags.read_tags(tagged)['artist'], 'Llama; Alpaca')
+        self.wait_for(lambda: a._display_name(tagged) == 'New Name')
+        row = queries.tracks(a.library, search='new name')
+        self.assertEqual([(t['path'], t['title'], t['year']) for t in row], [(tagged, 'New Name', 1997)])
+        # The reopened window shows the details again; Cancel leaves the editor unsaved
+        dialog = a._file_info_dialog
+        self.wait_for(lambda: dialog.edit_button.get_visible())
+        dialog.response(RESPONSE_EDIT)
+        dialog.entries['title'].set_text('Unsaved')
+        dialog.response(Gtk.ResponseType.CLOSE)
+        self.assertEqual(tags.read_tags(tagged)['title'], 'New Name')
+        # A file that can't be written reports why and stays in the editor
+        dialog = a._file_info_dialog
+        self.wait_for(lambda: dialog.edit_button.get_visible())
+        dialog.response(RESPONSE_EDIT)
+        os.chmod(tagged, 0o444)
+        try:
+            dialog.entries['title'].set_text('Blocked')
+            dialog.response(RESPONSE_SAVE)
+        finally:
+            os.chmod(tagged, 0o644)
+        self.assertIs(a._file_info_dialog, dialog)
+        self.assertIn("Couldn't save", dialog.error.get_text())
+        # WAV has no easy tags: no editor
+        a.show_file_info(path=self.files[0])
+        dialog = a._file_info_dialog
+        self.wait_for(lambda: dialog.fields.get('Sample rate'))
+        self.assertFalse(dialog.edit_button.get_visible())
 
     def test_corrupt_config_values_fall_back_to_defaults(self):
         a = self.app

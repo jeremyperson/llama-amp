@@ -5,6 +5,9 @@
 - Lyrics (Alt+Y): shows the lyrics of the playing track from an .lrc file
   with the same name beside it, or from its tags. Synced lyrics highlight
   the current line and scroll along; nothing is fetched online.
+- Tag editor: File Info (Alt+3) has Edit Tags for FLAC, MP3, Ogg, Opus and
+  M4A files when python3-mutagen is installed. Saved changes show up in the
+  playlist, the now-playing display and the Media Library immediately.
 
 ## 1.8 — 2026-09-23
 
